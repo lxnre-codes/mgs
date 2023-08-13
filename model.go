@@ -3,7 +3,6 @@ package mgs
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -12,11 +11,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Model[T interface{}] struct {
+type sessFn func(sessCtx mongo.SessionContext) (interface{}, error)
+
+type Model[T Schema] struct {
 	collection *mongo.Collection
 }
 
-func NewModel[T interface{}](collection *mongo.Collection) *Model[T] {
+func NewModel[T Schema](collection *mongo.Collection) *Model[T] {
 	return &Model[T]{collection}
 }
 
@@ -48,12 +49,17 @@ func (model *Model[T]) CreateOne(
 		return nil, err
 	}
 
-	_, err = model.collection.InsertOne(ctx, newDoc, opts...)
-	if err != nil {
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		_, err = model.collection.InsertOne(sessCtx, newDoc, opts...)
+		if err != nil {
+			return nil, err
+		}
+
+		err = runAfterCreateHooks(sessCtx, newDoc)
 		return nil, err
 	}
 
-	err = runAfterCreateHooks(ctx, newDoc)
+	_, err = withTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -69,29 +75,26 @@ func (model *Model[T]) CreateMany(
 	docs []T,
 	opts ...*options.InsertManyOptions,
 ) ([]*Document[T], error) {
-	newDocs := make([]*Document[T], len(docs))
-	docsToInsert := make([]interface{}, len(docs))
-	for i, doc := range docs {
-		newDoc := model.NewDocument(doc)
-		err := runBeforeCreateHooks(ctx, newDoc)
-		if err != nil {
-			return nil, fmt.Errorf("error running before create hooks at index %d : %w", i, err)
-		}
-		newDocs[i] = newDoc
-		docsToInsert[i] = newDoc
-	}
-	_, err := model.collection.InsertMany(ctx, docsToInsert, opts...)
+	newDocs, docsToInsert, err := model.beforeCreateMany(ctx, docs)
 	if err != nil {
 		return nil, err
 	}
-	for i, doc := range newDocs {
-		doc.isNew = false
-		doc.collection = model.collection
-		err := runAfterCreateHooks(ctx, doc)
+
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		_, err := model.collection.InsertMany(sessCtx, docsToInsert, opts...)
 		if err != nil {
-			return nil, fmt.Errorf("error running after create hooks at index %d : %w", i, err)
+			return nil, err
 		}
+
+		err = model.bulkHookRun(sessCtx, newDocs, runAfterCreateHooks[T])
+		return nil, err
 	}
+
+	_, err = withTransaction(ctx, model.collection, callback)
+	if err != nil {
+		return nil, err
+	}
+
 	return newDocs, nil
 }
 
@@ -100,9 +103,27 @@ func (model *Model[T]) DeleteOne(
 	query bson.M,
 	opts ...*options.DeleteOptions,
 ) error {
-	// TODO: run before delete hooks, also check the Document.Delete method
-	_, err := model.collection.DeleteOne(ctx, query, opts...)
-	// TODO: run after delete hooks, also check the Document.Delete method
+	doc := &Document[T]{}
+	err := model.collection.FindOne(ctx, query).Decode(doc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil
+		}
+		return err
+	}
+	err = runBeforeDeleteHooks(ctx, doc)
+	if err != nil {
+		return err
+	}
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		_, err := model.collection.DeleteOne(ctx, query, opts...)
+		if err != nil {
+			return nil, err
+		}
+		err = runAfterDeleteHooks(sessCtx, doc)
+		return nil, err
+	}
+	_, err = withTransaction(ctx, model.collection, callback)
 	return err
 }
 
@@ -111,9 +132,30 @@ func (model *Model[T]) DeleteMany(
 	query bson.M,
 	opts ...*options.DeleteOptions,
 ) error {
-	// TODO: run before delete hooks
-	_, err := model.collection.DeleteMany(ctx, query, opts...)
-	// TODO: run after delete hooks
+	docs := make([]*Document[T], 0)
+	cursor, err := model.collection.Find(ctx, query)
+	if err != nil {
+		return err
+	}
+	err = cursor.All(ctx, &docs)
+	if err != nil {
+		return err
+	}
+	err = model.bulkHookRun(ctx, docs, runBeforeDeleteHooks[T])
+	if err != nil {
+		return err
+	}
+
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		_, err := model.collection.DeleteMany(ctx, query, opts...)
+		if err != nil {
+			return nil, err
+		}
+
+		err = model.bulkHookRun(sessCtx, docs, runAfterDeleteHooks[T])
+		return nil, err
+	}
+	_, err = withTransaction(ctx, model.collection, callback)
 	return err
 }
 
@@ -140,7 +182,11 @@ func (model *Model[T]) FindById(
 	}
 	doc.collection = model.Collection()
 
-	// TODO: run after find hooks
+	err = runAfterFindHooks(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
+
 	return doc, nil
 }
 
@@ -159,7 +205,11 @@ func (model *Model[T]) FindOne(
 		return nil, err
 	}
 	doc.collection = model.collection
-	// TODO: run after find hooks
+
+	err = runAfterFindHooks(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
 
 	return doc, nil
 }
@@ -180,21 +230,15 @@ func (model *Model[T]) Find(
 	}
 	docs := make([]*Document[T], 0)
 
-	for cursor.Next(ctx) {
-		doc := &Document[T]{}
-		err := cursor.Decode(doc)
-		if err != nil {
-			return nil, err
-		}
-		doc.collection = model.collection
-		docs = append(docs, doc)
-	}
-
-	if err := cursor.Err(); err != nil {
+	err = cursor.All(ctx, &docs)
+	if err != nil {
 		return nil, err
 	}
 
-	// TODO: run after find hooks
+	err = model.bulkHookRun(ctx, docs, runAfterFindHooks[T])
+	if err != nil {
+		return nil, err
+	}
 
 	return docs, nil
 }
@@ -214,34 +258,73 @@ func (model *Model[T]) Find(
 // 	return doc, nil
 // }
 
-// NOTE: This does not validate the document. Use carefully
 func (model *Model[T]) UpdateOne(ctx context.Context,
 	query bson.M, update bson.M,
 	opts ...*options.UpdateOptions,
 ) error {
-	// TODO: run before update hooks
-	if _, ok := update["$set"]; ok {
-		update["$set"].(bson.M)["updatedAt"] = time.Now()
-	} else {
-		update["$set"] = bson.M{"updatedAt": time.Now()}
+	docs := make([]*Document[T], 0)
+	cursor, err := model.collection.Find(ctx, query)
+	if err != nil {
+		return err
 	}
-	_, err := model.collection.UpdateOne(ctx, query, update, opts...)
-	// TODO: run after update hooks
+	err = cursor.All(ctx, &docs)
+	if err != nil {
+		return err
+	}
+
+	err = model.bulkHookRun(ctx, docs, runBeforeUpdateHooks[T])
+	if err != nil {
+		return err
+	}
+
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		if _, ok := update["$set"]; ok {
+			update["$set"].(bson.M)["updatedAt"] = time.Now()
+		} else {
+			update["$set"] = bson.M{"updatedAt": time.Now()}
+		}
+		_, err := model.collection.UpdateOne(sessCtx, query, update, opts...)
+		if err != nil {
+			return nil, err
+		}
+		err = model.bulkHookRun(sessCtx, docs, runAfterUpdateHooks[T])
+		return nil, err
+	}
+	_, err = withTransaction(ctx, model.collection, callback)
 	return err
 }
 
-// NOTE: This does not validate the document. Use carefully
 func (model *Model[T]) UpdateMany(ctx context.Context,
 	query bson.M, update bson.M, opts ...*options.UpdateOptions,
 ) error {
-	// TODO: run before update hooks
-	if _, ok := update["$set"]; ok {
-		update["$set"].(bson.M)["updatedAt"] = time.Now()
-	} else {
-		update["$set"] = bson.M{"updatedAt": time.Now()}
+	doc := &Document[T]{}
+	err := model.collection.FindOne(ctx, query).Decode(doc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil
+		}
+		return err
 	}
-	_, err := model.collection.UpdateMany(ctx, query, update, opts...)
-	// TODO: run after update hooks
+	err = runBeforeUpdateHooks(ctx, doc)
+	if err != nil {
+		return err
+	}
+
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		if _, ok := update["$set"]; ok {
+			update["$set"].(bson.M)["updatedAt"] = time.Now()
+		} else {
+			update["$set"] = bson.M{"updatedAt": time.Now()}
+		}
+		_, err := model.collection.UpdateMany(sessCtx, query, update, opts...)
+		if err != nil {
+			return nil, err
+		}
+		err = runAfterUpdateHooks(sessCtx, doc)
+		return nil, err
+	}
+
+	_, err = withTransaction(ctx, model.collection, callback)
 	return err
 }
 
@@ -271,6 +354,22 @@ func (model *Model[T]) AggregateWithCursor(
 	return model.collection.Aggregate(ctx, pipeline)
 }
 
+func withTransaction(
+	ctx context.Context,
+	coll *mongo.Collection,
+	fn sessFn,
+	opts ...*options.TransactionOptions,
+) (interface{}, error) {
+	session, err := coll.Database().Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+
+	res, err := session.WithTransaction(ctx, fn, opts...)
+	return res, err
+}
+
 func getObjectId(id any) (*primitive.ObjectID, error) {
 	var oid primitive.ObjectID
 	switch id := id.(type) {
@@ -286,31 +385,4 @@ func getObjectId(id any) (*primitive.ObjectID, error) {
 		return nil, fmt.Errorf("invalid id type")
 	}
 	return &oid, nil
-}
-
-func GetProjections(keys string) bson.D {
-	sf := strings.Split(keys, " ")
-	projections := bson.D{}
-	for _, v := range sf {
-		ex := strings.HasPrefix(v, "-")
-		if ex {
-			projections = append(projections, bson.E{Key: v[1:], Value: 0})
-		} else {
-			projections = append(projections, bson.E{Key: v, Value: 1})
-		}
-	}
-
-	return bson.D{{Key: "$project", Value: projections}}
-}
-
-func GetUnwind(path string, preserveNull bool) bson.D {
-	return bson.D{
-		{
-			Key: "$unwind",
-			Value: bson.D{
-				{Key: "path", Value: "$" + path},
-				{Key: "preserveNullAndEmptyArrays", Value: preserveNull},
-			},
-		},
-	}
 }

@@ -12,9 +12,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// Schema is an interface that represents the structure of a document in a MongoDB collection.
+// It must be a struct.
+type Schema interface{}
+
 // Document is a struct that represents a document in a MongoDB collection.
-// Do not use this struct directly, instead use the Model.NowDocument() function.
-type Document[T interface{}] struct {
+// Do not use this struct directly, instead use the Model.NowDocument() method.
+type Document[T Schema] struct {
 	ID         primitive.ObjectID `json:"_id"       bson:"_id"`
 	CreatedAt  *time.Time         `json:"createdAt" bson:"createdAt"`
 	UpdatedAt  *time.Time         `json:"updatedAt" bson:"updatedAt"`
@@ -24,69 +28,60 @@ type Document[T interface{}] struct {
 	isNew      bool
 }
 
+// Saves a document to the database atomically. This method creates a new document if the document is not already existing, Otherwise, it updates the existing document.
+// The operation fails if any of the hooks return an error.
 func (doc *Document[T]) Save(ctx context.Context) error {
-	prevUpdatedAt, prevDoc := doc.UpdatedAt, doc.Doc
+	prevUpdatedAt := doc.UpdatedAt
 	err := runBeforeSaveHooks(ctx, doc)
 	if err != nil {
 		return err
 	}
-	if doc.isNew {
-		_, err := doc.Collection().InsertOne(ctx, doc)
-		if err != nil {
-			return err
-		}
-	} else {
 
-		doc.generateUpdatedAt()
-		_, err := doc.Collection().ReplaceOne(ctx, bson.M{"_id": doc.ID}, doc)
-		if err != nil {
-			doc.UpdatedAt = prevUpdatedAt
-			return err
-		}
-
-		doc, err = doc.Model().FindById(ctx, doc.ID.Hex())
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				doc = nil
-			} else {
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		if doc.isNew {
+			_, err := doc.Collection().InsertOne(sessCtx, doc)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			doc.generateUpdatedAt()
+			_, err := doc.Collection().ReplaceOne(sessCtx, bson.M{"_id": doc.ID}, doc)
+			if err != nil {
 				doc.UpdatedAt = prevUpdatedAt
-				doc.Doc = prevDoc
-				// WARN: fix this. must be accounted for
-				doc.Collection().ReplaceOne(ctx, bson.M{"_id": doc.ID}, doc)
-				return err
+				return nil, err
 			}
 		}
+		err = runAfterSaveHooks(sessCtx, doc)
+		if err != nil {
+			doc.UpdatedAt = prevUpdatedAt
+		}
+		return nil, err
 	}
-	err = runAfterSaveHooks(ctx, doc)
-	if err != nil {
-		doc.UpdatedAt = prevUpdatedAt
-		doc.Doc = prevDoc
-		// WARN: fix this. must be accounted for
-		doc.Collection().ReplaceOne(ctx, bson.M{"_id": doc.ID}, doc)
-		return err
-	}
-	return nil
+
+	_, err = withTransaction(ctx, doc.Collection(), callback)
+	return err
 }
 
+// Deletes a document from the database atomically.
+// The operation fails if any of the hooks return an error.
 func (doc *Document[T]) Delete(ctx context.Context) error {
-	prev, err := doc.Model().FindById(ctx, doc.ID.Hex())
-	if err != nil && err != mongo.ErrNoDocuments {
-		return err
-	}
-
-	err = runBeforeDeleteHooks(ctx, doc)
+	err := runBeforeDeleteHooks(ctx, doc)
 	if err != nil {
 		return err
 	}
 
-	err = doc.Model().DeleteOne(ctx, bson.M{"_id": doc.ID})
-	if err != nil {
-		return err
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		err = doc.Model().DeleteOne(sessCtx, bson.M{"_id": doc.ID})
+		if err != nil {
+			return nil, err
+		}
+
+		err = runAfterDeleteHooks(sessCtx, doc)
+		return nil, err
 	}
 
-	err = runAfterDeleteHooks(ctx, prev)
+	_, err = withTransaction(ctx, doc.Collection(), callback)
 	if err != nil {
-		doc.Collection().InsertOne(ctx, prev)
 		return err
 	}
 
@@ -94,14 +89,17 @@ func (doc *Document[T]) Delete(ctx context.Context) error {
 	return nil
 }
 
+// Returns the collection that the document belongs to.
 func (doc *Document[T]) Collection() *mongo.Collection {
 	return doc.collection
 }
 
+// Returns the model that the document belongs to.
 func (doc *Document[T]) Model() *Model[T] {
 	return NewModel[T](doc.collection)
 }
 
+// Returns the document as a JSON bytes.
 func (doc *Document[T]) MarshalJSON() ([]byte, error) {
 	d := bson.M{}
 	bts, err := json.Marshal(doc.Doc)
@@ -127,13 +125,19 @@ func (doc *Document[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d)
 }
 
-func (doc *Document[T]) Json() bson.M {
-	bts, _ := doc.MarshalJSON()
+func (doc *Document[T]) JSON() (bson.M, error) {
+	bts, err := doc.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
 
 	var d bson.M
 	json.Unmarshal(bts, &d)
+	if err != nil {
+		return nil, err
+	}
 
-	return d
+	return d, nil
 }
 
 func (doc *Document[T]) IsNew() bool {
