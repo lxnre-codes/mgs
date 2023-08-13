@@ -20,32 +20,32 @@ type BeforeDeleteHook[T Schema] interface {
 	BeforeDelete(ctx context.Context, doc *Document[T]) error
 }
 
-type AfterDeleteHook interface {
-	AfterDelete(ctx context.Context, doc interface{}) error
+type AfterDeleteHook[T Schema] interface {
+	AfterDelete(ctx context.Context, doc *Document[T]) error
 }
 
-type BeforeFindHook interface {
+type BeforeFindHook[T Schema] interface {
 	BeforeFind(ctx context.Context, query bson.M) error
 }
 
-type AfterFindHook interface {
-	AfterFind(ctx context.Context, doc interface{}) error
+type AfterFindHook[T Schema] interface {
+	AfterFind(ctx context.Context, doc *Document[T]) error
 }
 
-type BeforeSaveHook interface {
-	BeforeSave(ctx context.Context, doc interface{}) error
+type BeforeSaveHook[T Schema] interface {
+	BeforeSave(ctx context.Context, doc *Document[T]) error
 }
 
-type AfterSaveHook interface {
-	AfterSave(ctx context.Context, doc interface{}) error
+type AfterSaveHook[T Schema] interface {
+	AfterSave(ctx context.Context, doc *Document[T]) error
 }
 
-type BeforeUpdateHook interface {
-	BeforeUpdate(ctx context.Context, doc interface{}) error
+type BeforeUpdateHook[T Schema] interface {
+	BeforeUpdate(ctx context.Context, doc *Document[T]) error
 }
 
-type AfterUpdateHook interface {
-	AfterUpdate(ctx context.Context, doc interface{}) error
+type AfterUpdateHook[T Schema] interface {
+	AfterUpdate(ctx context.Context, doc *Document[T]) error
 }
 
 type hook[T Schema] func(ctx context.Context, doc *Document[T]) error
@@ -141,7 +141,7 @@ func runBeforeCreateHooks[T Schema](ctx context.Context, doc *Document[T]) error
 		}
 	}
 
-	if hook, ok := d.(BeforeSaveHook); ok {
+	if hook, ok := d.(BeforeSaveHook[T]); ok {
 		if err := hook.BeforeSave(ctx, doc); err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func runAfterCreateHooks[T Schema](ctx context.Context, doc *Document[T]) error 
 		}
 	}
 
-	if hook, ok := d.(AfterSaveHook); ok {
+	if hook, ok := d.(AfterSaveHook[T]); ok {
 		if err := hook.AfterSave(ctx, doc); err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ func runBeforeDeleteHooks[T Schema](ctx context.Context, doc *Document[T]) error
 
 func runAfterDeleteHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(AfterDeleteHook); ok {
+	if hook, ok := d.(AfterDeleteHook[T]); ok {
 		if err := hook.AfterDelete(ctx, doc); err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func runAfterDeleteHooks[T Schema](ctx context.Context, doc *Document[T]) error 
 
 func runBeforeFindHooks[T Schema](ctx context.Context, doc *Document[T], query bson.M) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(BeforeFindHook); ok {
+	if hook, ok := d.(BeforeFindHook[T]); ok {
 		return hook.BeforeFind(ctx, query)
 	}
 	return nil
@@ -195,7 +195,7 @@ func runBeforeFindHooks[T Schema](ctx context.Context, doc *Document[T], query b
 
 func runAfterFindHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(AfterFindHook); ok {
+	if hook, ok := d.(AfterFindHook[T]); ok {
 		if err := hook.AfterFind(ctx, doc); err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func runAfterFindHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 
 func runBeforeSaveHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(BeforeSaveHook); ok {
+	if hook, ok := d.(BeforeSaveHook[T]); ok {
 		if err := hook.BeforeSave(ctx, doc); err != nil {
 			return err
 		}
@@ -215,7 +215,7 @@ func runBeforeSaveHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 
 func runAfterSaveHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(AfterSaveHook); ok {
+	if hook, ok := d.(AfterSaveHook[T]); ok {
 		if err := hook.AfterSave(ctx, doc); err != nil {
 			return err
 		}
@@ -225,13 +225,13 @@ func runAfterSaveHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 
 func runBeforeUpdateHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(BeforeUpdateHook); ok {
+	if hook, ok := d.(BeforeUpdateHook[T]); ok {
 		if err := hook.BeforeUpdate(ctx, doc); err != nil {
 			return err
 		}
 	}
 
-	if hook, ok := d.(BeforeSaveHook); ok {
+	if hook, ok := d.(BeforeSaveHook[T]); ok {
 		if err := hook.BeforeSave(ctx, doc); err != nil {
 			return err
 		}
@@ -241,13 +241,13 @@ func runBeforeUpdateHooks[T Schema](ctx context.Context, doc *Document[T]) error
 
 func runAfterUpdateHooks[T Schema](ctx context.Context, doc *Document[T]) error {
 	var d interface{} = doc.Doc
-	if hook, ok := d.(AfterUpdateHook); ok {
+	if hook, ok := d.(AfterUpdateHook[T]); ok {
 		if err := hook.AfterUpdate(ctx, doc); err != nil {
 			return err
 		}
 	}
 
-	if hook, ok := d.(AfterSaveHook); ok {
+	if hook, ok := d.(AfterSaveHook[T]); ok {
 		if err := hook.AfterSave(ctx, doc); err != nil {
 			return err
 		}
