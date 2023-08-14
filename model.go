@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	. "github.com/0x-buidl/go-mongoose/options"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -40,7 +41,7 @@ func (model *Model[T]) NewDocument(data T) *Document[T] {
 
 func (model *Model[T]) CreateOne(
 	ctx context.Context, doc T,
-	opts ...*options.InsertOneOptions,
+	opts *InsertOneOptions,
 ) (*Document[T], error) {
 	newDoc := model.NewDocument(doc)
 
@@ -49,8 +50,10 @@ func (model *Model[T]) CreateOne(
 		return nil, err
 	}
 
+	_, iopt := MergeInsertOneOptions(opts)
+
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		_, err = model.collection.InsertOne(sessCtx, newDoc, opts...)
+		_, err = model.collection.InsertOne(sessCtx, newDoc, iopt)
 		if err != nil {
 			return nil, err
 		}
@@ -73,15 +76,17 @@ func (model *Model[T]) CreateOne(
 func (model *Model[T]) CreateMany(
 	ctx context.Context,
 	docs []T,
-	opts ...*options.InsertManyOptions,
+	opts ...*InsertManyOptions,
 ) ([]*Document[T], error) {
 	newDocs, docsToInsert, err := model.beforeCreateMany(ctx, docs)
 	if err != nil {
 		return nil, err
 	}
 
+	_, iopt := MergeInsertManyOptions(opts...)
+
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		_, err := model.collection.InsertMany(sessCtx, docsToInsert, opts...)
+		_, err := model.collection.InsertMany(sessCtx, docsToInsert, iopt)
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +166,7 @@ func (model *Model[T]) DeleteMany(
 
 func (model *Model[T]) FindById(
 	ctx context.Context, id any,
-	opts ...*options.FindOneOptions,
+	opts ...*FindOneOptions,
 ) (*Document[T], error) {
 	oid, err := getObjectId(id)
 	if err != nil {
@@ -176,7 +181,9 @@ func (model *Model[T]) FindById(
 		return nil, err
 	}
 
-	err = model.collection.FindOne(ctx, bson.M{"_id": *oid}, opts...).Decode(doc)
+	_, fopt := MergeFindOneOptions(opts...)
+
+	err = model.collection.FindOne(ctx, bson.M{"_id": *oid}, fopt).Decode(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -193,14 +200,16 @@ func (model *Model[T]) FindById(
 func (model *Model[T]) FindOne(
 	ctx context.Context,
 	query bson.M,
-	opts ...*options.FindOneOptions,
+	opts ...*FindOneOptions,
 ) (*Document[T], error) {
 	doc := &Document[T]{}
 	err := runBeforeFindHooks(ctx, doc, query)
 	if err != nil {
 		return nil, err
 	}
-	err = model.collection.FindOne(ctx, query, opts...).Decode(doc)
+
+	_, fopt := MergeFindOneOptions(opts...)
+	err = model.collection.FindOne(ctx, query, fopt).Decode(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -217,14 +226,15 @@ func (model *Model[T]) FindOne(
 func (model *Model[T]) Find(
 	ctx context.Context,
 	query bson.M,
-	opts ...*options.FindOptions,
+	opts ...*FindOptions,
 ) ([]*Document[T], error) {
 	err := runBeforeFindHooks(ctx, &Document[T]{}, query)
 	if err != nil {
 		return nil, err
 	}
 
-	cursor, err := model.collection.Find(ctx, query, opts...)
+	_, fopt := MergeFindOptions(opts...)
+	cursor, err := model.collection.Find(ctx, query, fopt)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +257,7 @@ func (model *Model[T]) Find(
 // 	ctx context.Context,
 // 	query bson.M,
 // 	update bson.M,
-// 	opts ...*options.FindOneAndUpdateOptions,
+// 	opts ...*FindOneAndUpdateOptions,
 // ) (*Document[T], error) {
 // 	doc := &Document[T]{}
 // 	err := model.collection.FindOneAndUpdate(ctx, query, update, opts...).Decode(doc)
@@ -261,20 +271,20 @@ func (model *Model[T]) Find(
 func (model *Model[T]) UpdateOne(ctx context.Context,
 	query bson.M, update bson.M,
 	opts ...*options.UpdateOptions,
-) error {
+) (*mongo.UpdateResult, error) {
 	docs := make([]*Document[T], 0)
 	cursor, err := model.collection.Find(ctx, query)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = cursor.All(ctx, &docs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = model.bulkHookRun(ctx, docs, runBeforeUpdateHooks[T])
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
@@ -283,31 +293,34 @@ func (model *Model[T]) UpdateOne(ctx context.Context,
 		} else {
 			update["$set"] = bson.M{"updatedAt": time.Now()}
 		}
-		_, err := model.collection.UpdateOne(sessCtx, query, update, opts...)
+		res, err := model.collection.UpdateOne(sessCtx, query, update, opts...)
 		if err != nil {
 			return nil, err
 		}
 		err = model.bulkHookRun(sessCtx, docs, runAfterUpdateHooks[T])
+		return res, err
+	}
+	res, err := withTransaction(ctx, model.collection, callback)
+	if err != nil {
 		return nil, err
 	}
-	_, err = withTransaction(ctx, model.collection, callback)
-	return err
+	return res.(*mongo.UpdateResult), nil
 }
 
 func (model *Model[T]) UpdateMany(ctx context.Context,
 	query bson.M, update bson.M, opts ...*options.UpdateOptions,
-) error {
+) (*mongo.UpdateResult, error) {
 	doc := &Document[T]{}
 	err := model.collection.FindOne(ctx, query).Decode(doc)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil
+			return &mongo.UpdateResult{}, nil
 		}
-		return err
+		return nil, err
 	}
 	err = runBeforeUpdateHooks(ctx, doc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
@@ -316,16 +329,19 @@ func (model *Model[T]) UpdateMany(ctx context.Context,
 		} else {
 			update["$set"] = bson.M{"updatedAt": time.Now()}
 		}
-		_, err := model.collection.UpdateMany(sessCtx, query, update, opts...)
+		res, err := model.collection.UpdateMany(sessCtx, query, update, opts...)
 		if err != nil {
 			return nil, err
 		}
 		err = runAfterUpdateHooks(sessCtx, doc)
-		return nil, err
+		return res, err
 	}
 
-	_, err = withTransaction(ctx, model.collection, callback)
-	return err
+	res, err := withTransaction(ctx, model.collection, callback)
+	if err != nil {
+		return nil, err
+	}
+	return res.(*mongo.UpdateResult), nil
 }
 
 func (model *Model[T]) CountDocuments(ctx context.Context,
