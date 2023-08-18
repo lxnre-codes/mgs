@@ -8,6 +8,7 @@ import (
 type InsertOneOptions struct {
 	*options.InsertOneOptions
 	*QueryOptions
+	*HookOptions
 }
 
 // InsertOne returns a new InsertOneOptions.
@@ -39,6 +40,7 @@ func MergeInsertOneOptions(opts ...*InsertOneOptions) (*QueryOptions, *options.I
 type InsertManyOptions struct {
 	*options.InsertManyOptions
 	*QueryOptions
+	*HookOptions
 }
 
 // InsertOne returns a new InsertOneOptions.

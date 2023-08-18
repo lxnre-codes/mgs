@@ -17,6 +17,7 @@ Still lots to integrate, just keeping a short list i can remember here.
 - Add custom options and merge with mongodb options. ⌛️
 - Add standard documentation & usage docs. ⌛️
 - Add Schema validations. ⌛️
+- Registering multiple hooks.
 
 ## License
 

@@ -6,6 +6,7 @@ import "go.mongodb.org/mongo-driver/mongo/options"
 type FindOneOptions struct {
 	*options.FindOneOptions
 	*QueryOptions
+	*HookOptions
 }
 
 // FindOne returns a new FindOneOptions.
@@ -37,6 +38,7 @@ func MergeFindOneOptions(opts ...*FindOneOptions) (*QueryOptions, *options.FindO
 type FindOptions struct {
 	*options.FindOptions
 	*QueryOptions
+	*HookOptions
 }
 
 // Find returns a new FindOptions.

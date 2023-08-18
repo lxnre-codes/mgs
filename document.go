@@ -32,7 +32,14 @@ type Document[T Schema] struct {
 // The operation fails if any of the hooks return an error.
 func (doc *Document[T]) Save(ctx context.Context) error {
 	prevUpdatedAt := doc.UpdatedAt
-	err := runBeforeSaveHooks(ctx, doc)
+
+	query := UpdateQuery
+	if doc.isNew {
+		query = CreateQuery
+	}
+
+	arg := newHookArg[T](doc, query)
+	err := runBeforeSaveHooks(ctx, doc.Doc, arg)
 	if err != nil {
 		return err
 	}
@@ -51,7 +58,8 @@ func (doc *Document[T]) Save(ctx context.Context) error {
 				return nil, err
 			}
 		}
-		err = runAfterSaveHooks(sessCtx, doc)
+		arg := newHookArg[T](doc, query)
+		err = runAfterSaveHooks(sessCtx, doc.Doc, arg)
 		if err != nil {
 			doc.UpdatedAt = prevUpdatedAt
 		}
@@ -65,18 +73,19 @@ func (doc *Document[T]) Save(ctx context.Context) error {
 // Deletes a document from the database atomically.
 // The operation fails if any of the hooks return an error.
 func (doc *Document[T]) Delete(ctx context.Context) error {
-	err := runBeforeDeleteHooks(ctx, doc)
+	arg := newHookArg[T](doc, DeleteQuery)
+	err := runBeforeDeleteHooks(ctx, doc.Doc, arg)
 	if err != nil {
 		return err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		err = doc.Model().DeleteOne(sessCtx, bson.M{"_id": doc.ID})
+		_, err = doc.Collection().DeleteOne(sessCtx, bson.M{"_id": doc.ID})
 		if err != nil {
 			return nil, err
 		}
 
-		err = runAfterDeleteHooks(sessCtx, doc)
+		err = runAfterDeleteHooks(sessCtx, doc.Doc, arg)
 		return nil, err
 	}
 
@@ -86,6 +95,10 @@ func (doc *Document[T]) Delete(ctx context.Context) error {
 	}
 
 	doc = nil
+	return nil
+}
+
+func (doc *Document[T]) Update(ctx context.Context) error {
 	return nil
 }
 
