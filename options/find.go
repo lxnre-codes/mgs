@@ -11,7 +11,7 @@ type FindOneOptions struct {
 
 // FindOne returns a new FindOneOptions.
 func FindOne() *FindOneOptions {
-	return &FindOneOptions{}
+	return &FindOneOptions{options.FindOne(), Query(), Hook()}
 }
 
 // MergeFindOneOptions combines the given FindOneOptions instances into a single FindOneOptions in a last-one-wins fashion.
@@ -43,7 +43,7 @@ type FindOptions struct {
 
 // Find returns a new FindOptions.
 func Find() *FindOptions {
-	return &FindOptions{}
+	return &FindOptions{options.Find(), Query(), Hook()}
 }
 
 // MergeFindOptions combines the given FindOptions instances into a single FindOptions in a last-one-wins fashion.

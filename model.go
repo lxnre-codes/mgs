@@ -3,6 +3,8 @@ package mgs
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	mopt "github.com/0x-buidl/go-mongoose/options"
@@ -381,6 +383,167 @@ func (model *Model[T]) AggregateWithCursor(
 	pipeline mongo.Pipeline,
 ) (*mongo.Cursor, error) {
 	return model.collection.Aggregate(ctx, pipeline)
+}
+
+type populateChan struct {
+	i   int
+	val interface{}
+}
+
+// TODO: custom errors for populate path
+func Populate(ctx context.Context, doc primitive.M, opt *mopt.PopulateOptions) error {
+	paths := strings.Split(*opt.Path, ".")
+	pathVal := doc[paths[0]]
+
+	for len(paths) > 1 && pathVal != nil {
+		// if current path is a slice, dive into the slice
+		if v := reflect.ValueOf(pathVal); v.Kind() == reflect.Slice {
+			// copy populate options and trim off first path key
+			nopt := *opt
+			np := strings.Join(paths[1:], ".")
+			nopt.Path = &np
+
+			// new context that we can cancel whenever error occurs while populating nested paths
+			ctx2, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			errChan := make(chan error) // to keep track of errors
+			doneChan := make(chan bool) // to keep track of populated count
+			wg := 0                     // also to keep track of populated count
+
+			for i := 0; i < v.Len(); i++ {
+				// if value is bson.M (i.e map) we can index it's keys, traverse the map
+				if iv, ok := v.Index(i).Interface().(bson.M); ok {
+					wg++
+					go func(pCtx context.Context, val bson.M) {
+						for {
+							select {
+							case <-pCtx.Done():
+								return
+							default:
+								// populate the keys
+								err := Populate(pCtx, val, &nopt)
+								if err != nil {
+									errChan <- err
+								}
+								doneChan <- true
+								return
+							}
+						}
+					}(ctx2, iv)
+				}
+			}
+
+			for wg > 0 {
+				select {
+				case <-ctx2.Done():
+					return ctx2.Err()
+				case err := <-errChan:
+					return err
+				case <-doneChan:
+					wg--
+				}
+			}
+			return nil
+		} else if v, ok := pathVal.(bson.M); ok {
+			// if path is a map, we can also it keys. Set the path value one step deep
+			pathVal = v[paths[1]]
+			// trim off the first path key
+			paths = paths[1:]
+		}
+	}
+
+	// we only get here if path is nested, but encountered a non map value while traversing. return
+	if len(paths) > 1 {
+		return nil
+	}
+
+	// we've arrived at the final key here. If it's a slice, dive into the slice and populate,
+	if v := reflect.ValueOf(pathVal); v.Kind() == reflect.Slice {
+		ctx2, cancel := context.WithCancel(ctx)
+		defer cancel()
+		errChan := make(chan error)
+		popChan := make(chan populateChan)
+		wg := 0
+
+		for i := 0; i < v.Len(); i++ {
+			wg++
+			go func(fCtx context.Context, i int, val any) {
+				for {
+					select {
+					case <-fCtx.Done():
+						return
+					default:
+						res, err := findPopulation(fCtx, bson.M{*opt.ForeignField: val}, opt)
+						if err != nil {
+							errChan <- err
+							return
+						}
+						popChan <- populateChan{i, res}
+						return
+					}
+				}
+			}(ctx2, i, v.Index(i).Interface())
+		}
+
+		newVals := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(opt.Schema)), v.Len(), v.Cap())
+		for wg > 0 {
+			select {
+			case <-ctx2.Done():
+				return ctx2.Err()
+			case err := <-errChan:
+				return err
+			case res := <-popChan:
+				newVals.Index(res.i).Set(reflect.ValueOf(res.val))
+				wg--
+			}
+		}
+		pathVal = newVals.Interface()
+	} else {
+		// otherwise populate the value
+		query := bson.M{*opt.ForeignField: pathVal}
+		res, err := findPopulation(ctx, query, opt)
+		if err != nil {
+			return err
+		}
+		pathVal = res
+	}
+
+	// set the value of the populated path
+	reflect.ValueOf(doc).SetMapIndex(reflect.ValueOf(paths[0]), reflect.ValueOf(pathVal))
+	return nil
+}
+
+func findPopulation(ctx context.Context, query bson.M, popt *mopt.PopulateOptions) (any, error) {
+	res := reflect.New(reflect.SliceOf(reflect.TypeOf(popt.Schema))).Interface()
+
+	fopt := options.Find()
+	if popt.Options != nil {
+		_, fopt = mopt.MergeFindOptions(*popt.Options...)
+	}
+	if *popt.OnlyOne {
+		fopt.SetLimit(1)
+	}
+
+	cursor, err := popt.Collection.Find(ctx, query, fopt)
+	if err != nil {
+		return nil, err
+	}
+	err = cursor.All(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+
+	if *popt.OnlyOne {
+		if reflect.ValueOf(res).Elem().Len() > 0 {
+			res = reflect.ValueOf(res).Elem().Index(0).Interface()
+		} else {
+			res = nil
+		}
+	} else {
+		res = reflect.ValueOf(res).Elem().Interface()
+	}
+	return res, nil
 }
 
 func withTransaction(

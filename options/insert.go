@@ -7,13 +7,12 @@ import (
 // InsertOneOptions represents the options for inserting a document.
 type InsertOneOptions struct {
 	*options.InsertOneOptions
-	*QueryOptions
 	*HookOptions
 }
 
 // InsertOne returns a new InsertOneOptions.
 func InsertOne() *InsertOneOptions {
-	return &InsertOneOptions{}
+	return &InsertOneOptions{options.InsertOne(), Hook()}
 }
 
 // MergeInsertOneOptions combines the given InsertOneOptions instances into a single InsertOneOptions in a last-one-wins fashion.
@@ -28,9 +27,9 @@ func MergeInsertOneOptions(opts ...*InsertOneOptions) (*QueryOptions, *options.I
 		if opt.InsertOneOptions != nil {
 			iopts = append(iopts, opt.InsertOneOptions)
 		}
-		if opt.QueryOptions != nil {
-			qopts = append(qopts, opt.QueryOptions)
-		}
+		// if opt.QueryOptions != nil {
+		// 	qopts = append(qopts, opt.QueryOptions)
+		// }
 	}
 	io, qo := options.MergeInsertOneOptions(iopts...), MergeQueryOptions(qopts...)
 	return qo, io
@@ -39,13 +38,12 @@ func MergeInsertOneOptions(opts ...*InsertOneOptions) (*QueryOptions, *options.I
 // InsertManyOptions represents the options for inserting many document.
 type InsertManyOptions struct {
 	*options.InsertManyOptions
-	*QueryOptions
 	*HookOptions
 }
 
 // InsertOne returns a new InsertOneOptions.
 func InsertMany() *InsertManyOptions {
-	return &InsertManyOptions{}
+	return &InsertManyOptions{options.InsertMany(), Hook()}
 }
 
 // MergeInsertManyOptions combines the given InsertManyOptions instances into a single InsertManyOptions in a last-one-wins fashion.
@@ -62,9 +60,9 @@ func MergeInsertManyOptions(
 		if opt.InsertManyOptions != nil {
 			iopts = append(iopts, opt.InsertManyOptions)
 		}
-		if opt.QueryOptions != nil {
-			qopts = append(qopts, opt.QueryOptions)
-		}
+		// if opt.QueryOptions != nil {
+		// 	qopts = append(qopts, opt.QueryOptions)
+		// }
 	}
 	io, qo := options.MergeInsertManyOptions(iopts...), MergeQueryOptions(qopts...)
 	return qo, io
