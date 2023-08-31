@@ -141,12 +141,12 @@ func TestModel_Populate(t *testing.T) {
 	generateBooks(ctx, db)
 
 	start := time.Now()
-	fmt.Println("populating docs with find", start)
+	fmt.Println("----- populating docs -----")
 	books, err := bookModel.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("docs populated in ", time.Since(start))
+	fmt.Println(len(books), " docs populated in ", time.Since(start))
 
 	for _, book := range books {
 		for _, author := range book.Doc.Authors {

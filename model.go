@@ -608,19 +608,8 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 		bson.D{
 			{
 				Key: "$match",
-				Value: bson.D{
-					{
-						Key: "$expr",
-						Value: bson.D{
-							{
-								Key: "$eq",
-								Value: bson.A{
-									"$$localField",
-									"$" + *opt.ForeignField,
-								},
-							},
-						},
-					},
+				Value: bson.M{
+					"$expr": bson.M{"$eq": bson.A{"$$localField", "$" + *opt.ForeignField}},
 				},
 			},
 		},
@@ -697,8 +686,9 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 		"as":       *opt.Path,
 	}
 	populatePipeline := mongo.Pipeline{}
-	// if path to populate is nested, document must be a struct so we can index those struct keys
 	v, t := reflect.ValueOf(doc), reflect.TypeOf(doc)
+
+	// document must be a struct
 	if v.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("document must be a struct to populate nested path")
 	}
