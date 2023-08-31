@@ -2,7 +2,7 @@ package options
 
 import (
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // PopulateOptions represents the options for populating a path on a document.
@@ -12,9 +12,9 @@ type PopulateOptions struct {
 	// Optional query conditions to match.
 	Match *bson.M
 	// Model to use for population.
-	Collection *mongo.Collection
-	// Optional query options like sort, limit, project etc.
-	Options *[]*FindOptions
+	Collection *string
+	// Optional query options. Only sort, skip, limit and projections are used.
+	Options *options.FindOptions
 	// Paths to populate on the populated doc.
 	Populate *[]*PopulateOptions
 	// Schema to marshal the populated doc into, default is bson.M.
@@ -52,14 +52,14 @@ func (pop *PopulateOptions) SetMatch(match bson.M) *PopulateOptions {
 }
 
 // SetCollection sets the `Collection` option.
-func (pop *PopulateOptions) SetCollection(coll *mongo.Collection) *PopulateOptions {
-	pop.Collection = coll
+func (pop *PopulateOptions) SetCollection(coll string) *PopulateOptions {
+	pop.Collection = &coll
 	return pop
 }
 
 // SetOptions sets the `Options` option.
-func (pop *PopulateOptions) SetOptions(options ...*FindOptions) *PopulateOptions {
-	pop.Options = &options
+func (pop *PopulateOptions) SetOptions(options *options.FindOptions) *PopulateOptions {
+	pop.Options = options
 	return pop
 }
 

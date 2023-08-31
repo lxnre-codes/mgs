@@ -188,12 +188,26 @@ func (model *Model[T]) FindById(
 	}
 	query["_id"] = *oid
 
-	_, fopt := mopt.MergeFindOneOptions(opts...)
+	qopt, fopt := mopt.MergeFindOneOptions(opts...)
 
-	err = model.collection.FindOne(ctx, bson.M{"_id": *oid}, fopt).Decode(doc)
-	if err != nil {
-		return nil, err
+	if qopt.PopulateOption != nil {
+		opt := mopt.FindOne()
+		opt.FindOneOptions = fopt
+		opt.QueryOptions = qopt
+		docs, err := findWithPopulate(ctx, model.collection, query, doc.doc, opt)
+		if err != nil {
+			return nil, err
+		}
+		if len(docs) == 0 {
+			return nil, mongo.ErrNoDocuments
+		}
+	} else {
+		err = model.collection.FindOne(ctx, bson.M{"_id": *oid}, fopt).Decode(doc)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	doc.collection = model.Collection()
 
 	err = runAfterFindHooks(ctx, doc.Doc, newHookArg[T](doc, FindQuery))
@@ -218,10 +232,23 @@ func (model *Model[T]) FindOne(
 		return nil, err
 	}
 
-	_, fopt := mopt.MergeFindOneOptions(opts...)
-	err = model.collection.FindOne(ctx, query, fopt).Decode(doc)
-	if err != nil {
-		return nil, err
+	qopt, fopt := mopt.MergeFindOneOptions(opts...)
+	if qopt.PopulateOption != nil {
+		opt := mopt.FindOne()
+		opt.FindOneOptions = fopt
+		opt.QueryOptions = qopt
+		docs, err := findWithPopulate(ctx, model.collection, query, doc.doc, opt)
+		if err != nil {
+			return nil, err
+		}
+		if len(docs) == 0 {
+			return nil, mongo.ErrNoDocuments
+		}
+	} else {
+		err = model.collection.FindOne(ctx, query, fopt).Decode(doc)
+		if err != nil {
+			return nil, err
+		}
 	}
 	doc.collection = model.collection
 
@@ -238,25 +265,35 @@ func (model *Model[T]) Find(
 	query bson.M,
 	opts ...*mopt.FindOptions,
 ) ([]*Document[T], error) {
-	d := (&Document[T]{}).Doc
+	d := (&Document[T]{})
 
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindQuery).SetOptions(opts)
 
-	err := runBeforeFindHooks(ctx, d, newHookArg[T](qarg, FindQuery))
+	err := runBeforeFindHooks(ctx, d.Doc, newHookArg[T](qarg, FindQuery))
 	if err != nil {
 		return nil, err
 	}
 
-	_, fopt := mopt.MergeFindOptions(opts...)
-	cursor, err := model.collection.Find(ctx, query, fopt)
-	if err != nil {
-		return nil, err
-	}
 	docs := make([]*Document[T], 0)
 
-	err = cursor.All(ctx, &docs)
-	if err != nil {
-		return nil, err
+	qopt, fopt := mopt.MergeFindOptions(opts...)
+	if qopt.PopulateOption != nil {
+		opt := mopt.Find()
+		opt.FindOptions = fopt
+		opt.QueryOptions = qopt
+		docs, err = findWithPopulate(ctx, model.collection, query, d.doc, opt)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cursor, err := model.collection.Find(ctx, query, fopt)
+		if err != nil {
+			return nil, err
+		}
+		err = cursor.All(ctx, &docs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = runAfterFindHooks(ctx, d, newHookArg[T](docs, FindQuery))
@@ -385,165 +422,31 @@ func (model *Model[T]) AggregateWithCursor(
 	return model.collection.Aggregate(ctx, pipeline)
 }
 
-type populateChan struct {
-	i   int
-	val interface{}
-}
-
-// TODO: custom errors for populate path
-func Populate(ctx context.Context, doc primitive.M, opt *mopt.PopulateOptions) error {
-	paths := strings.Split(*opt.Path, ".")
-	pathVal := doc[paths[0]]
-
-	for len(paths) > 1 && pathVal != nil {
-		// if current path is a slice, dive into the slice
-		if v := reflect.ValueOf(pathVal); v.Kind() == reflect.Slice {
-			// copy populate options and trim off first path key
-			nopt := *opt
-			np := strings.Join(paths[1:], ".")
-			nopt.Path = &np
-
-			// new context that we can cancel whenever error occurs while populating nested paths
-			ctx2, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			errChan := make(chan error) // to keep track of errors
-			doneChan := make(chan bool) // to keep track of populated count
-			wg := 0                     // also to keep track of populated count
-
-			for i := 0; i < v.Len(); i++ {
-				// if value is bson.M (i.e map) we can index it's keys, traverse the map
-				if iv, ok := v.Index(i).Interface().(bson.M); ok {
-					wg++
-					go func(pCtx context.Context, val bson.M) {
-						for {
-							select {
-							case <-pCtx.Done():
-								return
-							default:
-								// populate the keys
-								err := Populate(pCtx, val, &nopt)
-								if err != nil {
-									errChan <- err
-								}
-								doneChan <- true
-								return
-							}
-						}
-					}(ctx2, iv)
-				}
-			}
-
-			for wg > 0 {
-				select {
-				case <-ctx2.Done():
-					return ctx2.Err()
-				case err := <-errChan:
-					return err
-				case <-doneChan:
-					wg--
-				}
-			}
-			return nil
-		} else if v, ok := pathVal.(bson.M); ok {
-			// if path is a map, we can also it keys. Set the path value one step deep
-			pathVal = v[paths[1]]
-			// trim off the first path key
-			paths = paths[1:]
-		}
-	}
-
-	// we only get here if path is nested, but encountered a non map value while traversing. return
-	if len(paths) > 1 {
-		return nil
-	}
-
-	// we've arrived at the final key here. If it's a slice, dive into the slice and populate,
-	if v := reflect.ValueOf(pathVal); v.Kind() == reflect.Slice {
-		ctx2, cancel := context.WithCancel(ctx)
-		defer cancel()
-		errChan := make(chan error)
-		popChan := make(chan populateChan)
-		wg := 0
-
-		for i := 0; i < v.Len(); i++ {
-			wg++
-			go func(fCtx context.Context, i int, val any) {
-				for {
-					select {
-					case <-fCtx.Done():
-						return
-					default:
-						res, err := findPopulation(fCtx, bson.M{*opt.ForeignField: val}, opt)
-						if err != nil {
-							errChan <- err
-							return
-						}
-						popChan <- populateChan{i, res}
-						return
-					}
-				}
-			}(ctx2, i, v.Index(i).Interface())
-		}
-
-		newVals := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(opt.Schema)), v.Len(), v.Cap())
-		for wg > 0 {
-			select {
-			case <-ctx2.Done():
-				return ctx2.Err()
-			case err := <-errChan:
-				return err
-			case res := <-popChan:
-				newVals.Index(res.i).Set(reflect.ValueOf(res.val))
-				wg--
-			}
-		}
-		pathVal = newVals.Interface()
-	} else {
-		// otherwise populate the value
-		query := bson.M{*opt.ForeignField: pathVal}
-		res, err := findPopulation(ctx, query, opt)
+func findWithPopulate[P unionFindOpts, T Schema](
+	ctx context.Context, c *mongo.Collection,
+	q bson.M, d T, opt P,
+) ([]*Document[T], error) {
+	pipelineOpts, aggrOpts, queryOpts := mergeFindOptsWithAggregatOpts(opt)
+	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
+	// FIXME: run this in parallel
+	for _, pop := range *queryOpts.PopulateOption {
+		pipe, err := getPopulateStages(d, pop)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		pathVal = res
+		pipeline = append(pipeline, pipe...)
 	}
 
-	// set the value of the populated path
-	reflect.ValueOf(doc).SetMapIndex(reflect.ValueOf(paths[0]), reflect.ValueOf(pathVal))
-	return nil
-}
-
-func findPopulation(ctx context.Context, query bson.M, popt *mopt.PopulateOptions) (any, error) {
-	res := reflect.New(reflect.SliceOf(reflect.TypeOf(popt.Schema))).Interface()
-
-	fopt := options.Find()
-	if popt.Options != nil {
-		_, fopt = mopt.MergeFindOptions(*popt.Options...)
-	}
-	if *popt.OnlyOne {
-		fopt.SetLimit(1)
-	}
-
-	cursor, err := popt.Collection.Find(ctx, query, fopt)
+	docs := make([]*Document[T], 0)
+	cursor, err := c.Aggregate(ctx, pipeline, aggrOpts)
 	if err != nil {
 		return nil, err
 	}
-	err = cursor.All(ctx, res)
+	err = cursor.All(ctx, &docs)
 	if err != nil {
 		return nil, err
 	}
-
-	if *popt.OnlyOne {
-		if reflect.ValueOf(res).Elem().Len() > 0 {
-			res = reflect.ValueOf(res).Elem().Index(0).Interface()
-		} else {
-			res = nil
-		}
-	} else {
-		res = reflect.ValueOf(res).Elem().Interface()
-	}
-	return res, nil
+	return docs, nil
 }
 
 func withTransaction(
@@ -577,4 +480,279 @@ func getObjectId(id any) (*primitive.ObjectID, error) {
 		return nil, fmt.Errorf("invalid ObjectID")
 	}
 	return &oid, nil
+}
+
+type unionFindOpts interface {
+	*mopt.FindOptions | *mopt.FindOneOptions
+}
+
+// TODO: merge these options with aggregate options if possible
+// if opt.AllowPartialResults != nil {
+// }
+// if opt.CursorType != nil {
+// }
+// if opt.Max != nil {
+// }
+// if opt.Min != nil {
+// }
+// if opt.NoCursorTimeout != nil {
+// }
+// if opt.OplogReplay != nil {
+// }
+// if opt.ReturnKey != nil {
+// }
+// if opt.ShowRecordID != nil {
+// }
+// if opt.Snapshot != nil {
+// }
+
+func mergeFindOptsWithAggregatOpts[T unionFindOpts](
+	opt T,
+) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
+	aggOpts, pipelineOpts, queryOpts := options.Aggregate(), mongo.Pipeline{}, mopt.Query()
+	switch opt := any(opt).(type) {
+	case *mopt.FindOptions:
+		if opt.AllowDiskUse != nil {
+			aggOpts.SetAllowDiskUse(*opt.AllowDiskUse)
+		}
+		if opt.BatchSize != nil {
+			aggOpts.SetBatchSize(*opt.BatchSize)
+		}
+		if opt.Collation != nil {
+			aggOpts.SetCollation(opt.Collation)
+		}
+		if opt.Comment != nil {
+			aggOpts.SetComment(*opt.Comment)
+		}
+		if opt.Hint != nil {
+			aggOpts.SetHint(opt.Hint)
+		}
+		if opt.MaxAwaitTime != nil {
+			aggOpts.SetMaxAwaitTime(*opt.MaxAwaitTime)
+		}
+		if opt.MaxTime != nil {
+			aggOpts.SetMaxTime(*opt.MaxTime)
+		}
+		if opt.Let != nil {
+			aggOpts.SetLet(opt.Let)
+		}
+		if opt.Sort != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$sort", Value: opt.Sort}})
+		}
+		if opt.Limit != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$limit", Value: *opt.Limit}})
+		}
+		if opt.Skip != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$skip", Value: *opt.Skip}})
+		}
+		if opt.Projection != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$project", Value: opt.Projection}})
+		}
+		queryOpts = opt.QueryOptions
+	case *mopt.FindOneOptions:
+		if opt.BatchSize != nil {
+			aggOpts.SetBatchSize(*opt.BatchSize)
+		}
+		if opt.Collation != nil {
+			aggOpts.SetCollation(opt.Collation)
+		}
+		if opt.Comment != nil {
+			aggOpts.SetComment(*opt.Comment)
+		}
+		if opt.Hint != nil {
+			aggOpts.SetHint(opt.Hint)
+		}
+		if opt.MaxAwaitTime != nil {
+			aggOpts.SetMaxAwaitTime(*opt.MaxAwaitTime)
+		}
+		if opt.MaxTime != nil {
+			aggOpts.SetMaxTime(*opt.MaxTime)
+		}
+		if opt.Sort != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$sort", Value: opt.Sort}})
+		}
+		if opt.Skip != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$skip", Value: *opt.Skip}})
+		}
+		if opt.Projection != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$project", Value: opt.Projection}})
+		}
+		queryOpts = opt.QueryOptions
+	}
+	return pipelineOpts, aggOpts, queryOpts
+}
+
+// TODO: custom populate errors
+func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, error) {
+	lookupPipeline := mongo.Pipeline{
+		bson.D{
+			{
+				Key: "$match",
+				Value: bson.D{
+					{
+						Key: "$expr",
+						Value: bson.D{
+							{
+								Key: "$eq",
+								Value: bson.A{
+									"$$localField",
+									"$" + *opt.ForeignField,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// populated nested populations
+	lookups := make([]bson.D, 0)
+	if opt.Populate != nil {
+		// FIXME: run this in parallel
+		for _, p := range *opt.Populate {
+			pipe, err := getPopulateStages(opt.Schema, p)
+			if err != nil {
+				return nil, err
+			}
+			lookups = append(lookups, pipe...)
+		}
+	}
+
+	// merge options into aggregate pipeline
+	if opt.Options != nil {
+		popt := opt.Options
+		if popt.Sort != nil {
+			lookupPipeline = append(lookupPipeline, bson.D{{Key: "$sort", Value: popt.Sort}})
+		}
+		if popt.Skip != nil {
+			lookupPipeline = append(lookupPipeline, bson.D{{Key: "$skip", Value: popt.Skip}})
+		}
+		var limit int64 = 1
+		if popt.Limit != nil && !*opt.OnlyOne {
+			limit = *popt.Limit
+		}
+		lookupPipeline = append(lookupPipeline, bson.D{{Key: "$limit", Value: limit}})
+		if len(lookups) > 0 {
+			lookupPipeline = append(lookupPipeline, lookups...)
+		}
+		if popt.Projection != nil {
+			lookupPipeline = append(
+				lookupPipeline,
+				bson.D{{Key: "$project", Value: popt.Projection}},
+			)
+		}
+	} else {
+		if *opt.OnlyOne {
+			lookupPipeline = append(lookupPipeline, bson.D{{Key: "$limit", Value: 1}})
+		}
+		if len(lookups) > 0 {
+			lookupPipeline = append(lookupPipeline, lookups...)
+		}
+	}
+
+	lookup := bson.M{
+		"from":     *opt.Collection,
+		"let":      bson.M{"localField": "$" + *opt.Path},
+		"pipeline": lookupPipeline,
+		"as":       *opt.Path,
+	}
+	populatePipeline := mongo.Pipeline{}
+	// if path to populate is nested, document must be a struct so we can index those struct keys
+	v, t := reflect.ValueOf(doc), reflect.TypeOf(doc)
+	if v.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("document must be a struct to populate nested path")
+	}
+
+	paths := strings.Split(*opt.Path, ".")
+	windPaths := make([]bson.D, 0)
+	// traverse and unwind all slice fields
+	for len(paths) > 0 {
+		currPath := paths[0] // set current path
+		// get all bson tags of the struct
+		fields := getStructFields(t)
+
+		// get the struct field of the path to populate
+		field, ok := fields[currPath]
+		if !ok {
+			return nil, fmt.Errorf("field %s not found in struct", currPath)
+		}
+
+		// check if it's a pointer
+		ft := field.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+
+		switch {
+		case ft.Kind() == reflect.Slice:
+			elemType := ft.Elem()
+			if elemType.Kind() == reflect.Pointer {
+				elemType = elemType.Elem()
+			}
+			// check if it's slice of struct
+			if len(paths) > 1 && elemType.Kind() != reflect.Struct {
+				return nil, fmt.Errorf("field %s must be a slice of struct", currPath)
+			}
+			// if the field is a slice, we need to unwind it
+			populatePipeline = append(
+				populatePipeline,
+				bson.D{{Key: "$unwind", Value: "$" + currPath}},
+			)
+			group := bson.E{
+				Key:   "$group",
+				Value: bson.M{"_id": "$_id"},
+			}
+
+			if len(paths) < len(strings.Split(*opt.Path, ".")) {
+				group.Value.(bson.M)["_id"] = nil
+			}
+
+			// wind paths in descending order
+			for k := range fields {
+				if k == currPath {
+					group.Value.(bson.M)[k] = bson.M{"$push": "$" + k}
+				} else {
+					group.Value.(bson.M)[k] = bson.M{"$first": "$" + k}
+				}
+			}
+			windPaths = append([]bson.D{{group}}, windPaths...)
+			t = elemType
+		case ft.Kind() == reflect.Struct:
+			t = ft
+		default:
+			if len(paths) > 1 {
+				return nil, fmt.Errorf("field %s must be a struct or slice of struct", currPath)
+			}
+		}
+		paths = paths[1:] // trim off first key
+
+	}
+
+	populatePipeline = append(populatePipeline, bson.D{{Key: "$lookup", Value: lookup}})
+	if *opt.OnlyOne {
+		populatePipeline = append(
+			populatePipeline,
+			bson.D{
+				{
+					Key:   "$unwind",
+					Value: bson.M{"path": "$" + *opt.Path, "preserveNullAndEmptyArrays": true},
+				},
+			},
+		)
+	}
+	populatePipeline = append(populatePipeline, windPaths...)
+	return populatePipeline, nil
+}
+
+func getStructFields(t reflect.Type) map[string]reflect.StructField {
+	fields := make(map[string]reflect.StructField)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("bson")
+		if tag != "" && tag != "-" {
+			fields[tag] = field
+		}
+	}
+	return fields
 }
