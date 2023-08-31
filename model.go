@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	mopt "github.com/0x-buidl/go-mongoose/options"
@@ -428,14 +429,33 @@ func findWithPopulate[P unionFindOpts, T Schema](
 ) ([]*Document[T], error) {
 	pipelineOpts, aggrOpts, queryOpts := mergeFindOptsWithAggregatOpts(opt)
 	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
-	// FIXME: run this in parallel
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var err error
 	for _, pop := range *queryOpts.PopulateOption {
-		pipe, err := getPopulateStages(d, pop)
-		if err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, pipe...)
+		wg.Add(1)
+		func(pop *mopt.PopulateOptions) {
+			defer wg.Done()
+			mu.Lock()
+			if err != nil {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
+
+			pipe, pErr := getPopulateStages(d, pop)
+
+			mu.Lock()
+			if pErr != nil {
+				err = pErr
+				mu.Unlock()
+				return
+			}
+			pipeline = append(pipeline, pipe...)
+			mu.Unlock()
+		}(pop)
 	}
+	wg.Wait()
 
 	docs := make([]*Document[T], 0)
 	cursor, err := c.Aggregate(ctx, pipeline, aggrOpts)
@@ -609,14 +629,33 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 	// populated nested populations
 	lookups := make([]bson.D, 0)
 	if opt.Populate != nil {
-		// FIXME: run this in parallel
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var err error
 		for _, p := range *opt.Populate {
-			pipe, err := getPopulateStages(opt.Schema, p)
-			if err != nil {
-				return nil, err
-			}
-			lookups = append(lookups, pipe...)
+			wg.Add(1)
+			go func(p *mopt.PopulateOptions) {
+				defer wg.Done()
+				mu.Lock()
+				if err != nil {
+					mu.Unlock()
+					return
+				}
+				mu.Unlock()
+
+				pipe, pErr := getPopulateStages(opt.Schema, p)
+
+				mu.Lock()
+				if pErr != nil {
+					err = pErr
+					mu.Unlock()
+					return
+				}
+				lookups = append(lookups, pipe...)
+				mu.Unlock()
+			}(p)
 		}
+		wg.Wait()
 	}
 
 	// merge options into aggregate pipeline

@@ -14,9 +14,9 @@ Still lots to integrate, just keeping a short list i can remember here.
 
 - Run hooks for all READ / WRITE operations. ✅
 - Set up go releaser.
-- Add custom options and merge with mongodb options. ⌛️
+- Add custom options and merge with mongodb options. ✅
 - Add standard documentation & usage docs. ⌛️
-- Add Schema validations. ⌛️
+- Add Schema validations. ✅
 - Registering multiple hooks.
 
 ## License
