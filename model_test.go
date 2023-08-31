@@ -13,7 +13,6 @@ import (
 	mgs "github.com/0x-buidl/go-mongoose"
 	mopt "github.com/0x-buidl/go-mongoose/options"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -51,11 +50,11 @@ func (b *Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
 }
 
 type Author struct {
-	mock.Mock `bson:"-"`
 	Name      string     `bson:"name"      json:"name" validate:"required"`
 	Deleted   bool       `bson:"deleted"   json:"-"`
 	DeletedAt *time.Time `bson:"deletedAt" json:"-"`
 }
+
 type Chapter struct {
 	ID    primitive.ObjectID `bson:"_id"    json:"_id"    validate:"required"`
 	Title string             `bson:"title"  json:"title"  validate:"required"`

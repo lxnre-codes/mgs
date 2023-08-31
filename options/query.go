@@ -17,7 +17,7 @@ type PopulateOptions struct {
 	Options *options.FindOptions
 	// Paths to populate on the populated doc.
 	Populate *[]*PopulateOptions
-	// Schema to marshal the populated doc into, default is bson.M.
+	// Schema the populated doc is associated with, default is bson.M.
 	Schema interface{}
 	// Override the schema-level `LocalField` option for this individual `populate()` call.
 	LocalField *string
