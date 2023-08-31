@@ -123,8 +123,8 @@ func TestModel_NewDocument(t *testing.T) {
 
 func TestModel_Populate(t *testing.T) {
 	ctx := context.Background()
-	db, _ := setup()
-	// defer teardown(ctx)
+	db, teardown := setup()
+	defer teardown(ctx)
 
 	bookModel := mgs.NewModel[Book](db.Collection("books"))
 
