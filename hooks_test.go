@@ -93,7 +93,7 @@ func TestCreateHooks(t *testing.T) {
 		db, teardown := setup()
 		defer teardown(ctx)
 
-		bookModel := mgs.NewModel[HookBook](db.Collection("books"))
+		bookModel := mgs.NewModel[HookBook, *mgs.DefaultSchema](db.Collection("books"))
 
 		b := HookBook{Title: "test1"}
 
