@@ -18,8 +18,8 @@ type Book struct {
 	DeletedAt *time.Time         `json:"-"      bson:"deletedAt"`
 }
 
-func NewBookModel(coll *mongo.Collection) *mgs.Model[Book] {
-	return mgs.NewModel[Book](coll)
+func NewBookModel(coll *mongo.Collection) *mgs.Model[Book, *mgs.DefaultSchema] {
+	return mgs.NewModel[Book, *mgs.DefaultSchema](coll)
 }
 
 func (book *Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {

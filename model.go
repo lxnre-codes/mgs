@@ -17,38 +17,59 @@ import (
 
 type sessFn func(sessCtx mongo.SessionContext) (interface{}, error)
 
-type Model[T Schema] struct {
+type Model[T Schema, P IDefaultSchema] struct {
 	collection *mongo.Collection
 }
 
-func NewModel[T Schema](collection *mongo.Collection) *Model[T] {
-	return &Model[T]{collection}
+// NewModel creates a new model. T is the schema type, P is the default schema type.
+// Panics if T or P is not a struct .
+func NewModel[T Schema, P IDefaultSchema](collection *mongo.Collection) *Model[T, P] {
+	var defSchema P
+	defType := reflect.ValueOf(defSchema).Type().Elem()
+	if defType.Kind() != reflect.Struct {
+		panic("DefaultSchema must be a struct")
+	}
+
+	var t T
+	if reflect.ValueOf(t).Type().Kind() != reflect.Struct {
+		panic("Schema must be a struct")
+	}
+	return &Model[T, P]{collection}
 }
 
-func (model *Model[T]) Collection() *mongo.Collection {
+func (model *Model[T, P]) Collection() *mongo.Collection {
 	return model.collection
 }
 
-func (model *Model[T]) NewDocument(data T) *Document[T] {
-	doc := Document[T]{
-		Doc:        &data,
-		collection: model.collection,
-		doc:        data,
-		isNew:      true,
+func (model *Model[T, P]) NewDocument(data T) *Document[T, P] {
+	defType := reflect.ValueOf(*new(P)).Type().Elem()
+	defSchema := reflect.New(defType).Interface()
+
+	doc := Document[T, P]{
+		IDefaultSchema: defSchema.(P),
+		Doc:            &data,
+		collection:     model.collection,
+		doc:            data,
+		isNew:          true,
 	}
-	doc.generateId()
-	doc.generateCreatedAt()
-	doc.generateUpdatedAt()
+	doc.GenerateID()
+	doc.GenerateCreatedAt()
+	doc.GenerateUpdatedAt()
 	return &doc
 }
 
-func (model *Model[T]) CreateOne(
+func (model *Model[T, P]) CreateOne(
 	ctx context.Context, doc T,
 	opts ...*mopt.InsertOneOptions,
-) (*Document[T], error) {
+) (*Document[T, P], error) {
 	newDoc := model.NewDocument(doc)
 
-	err := runBeforeCreateHooks(ctx, newDoc.Doc, newHookArg[T](newDoc, CreateQuery))
+	arg := newHookArg[T](newDoc, CreateQuery)
+	if err := runValidateHooks(ctx, newDoc, arg); err != nil {
+		return nil, err
+	}
+
+	err := runBeforeCreateHooks(ctx, newDoc, arg)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +82,7 @@ func (model *Model[T]) CreateOne(
 			return nil, err
 		}
 
-		err = runAfterCreateHooks(sCtx, newDoc.Doc, newHookArg[T](newDoc, CreateQuery))
+		err = runAfterCreateHooks(sCtx, newDoc, newHookArg[T](newDoc, CreateQuery))
 		return nil, err
 	}
 
@@ -76,11 +97,11 @@ func (model *Model[T]) CreateOne(
 	return newDoc, nil
 }
 
-func (model *Model[T]) CreateMany(
+func (model *Model[T, P]) CreateMany(
 	ctx context.Context,
 	docs []T,
 	opts ...*mopt.InsertManyOptions,
-) ([]*Document[T], error) {
+) ([]*Document[T, P], error) {
 	newDocs, docsToInsert, err := model.beforeCreateMany(ctx, docs)
 	if err != nil {
 		return nil, err
@@ -106,16 +127,14 @@ func (model *Model[T]) CreateMany(
 	return newDocs, nil
 }
 
-func (model *Model[T]) DeleteOne(
+func (model *Model[T, P]) DeleteOne(
 	ctx context.Context,
 	query bson.M,
 	opts ...*options.DeleteOptions,
 ) (*mongo.DeleteResult, error) {
-	d := (&Document[T]{}).Doc
-
+	ds := model.docSample()
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(DeleteQuery).SetOptions(opts)
-
-	err := runBeforeDeleteHooks(ctx, d, newHookArg[T](qarg, DeleteQuery))
+	err := runBeforeDeleteHooks(ctx, ds, newHookArg[T](qarg, DeleteQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +144,7 @@ func (model *Model[T]) DeleteOne(
 		if err != nil {
 			return nil, err
 		}
-		err = runAfterDeleteHooks(sessCtx, d, newHookArg[T](res, DeleteQuery))
+		err = runAfterDeleteHooks(sessCtx, ds, newHookArg[T](res, DeleteQuery))
 		if err != nil {
 			return nil, err
 		}
@@ -138,16 +157,15 @@ func (model *Model[T]) DeleteOne(
 	return res.(*mongo.DeleteResult), err
 }
 
-func (model *Model[T]) DeleteMany(
+func (model *Model[T, P]) DeleteMany(
 	ctx context.Context,
 	query bson.M,
 	opts ...*options.DeleteOptions,
 ) (*mongo.DeleteResult, error) {
-	d := (&Document[T]{}).Doc
+	ds := model.docSample()
 
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(DeleteQuery).SetOptions(opts)
-
-	err := runBeforeDeleteHooks(ctx, d, newHookArg[T](qarg, DeleteQuery))
+	err := runBeforeDeleteHooks(ctx, ds, newHookArg[T](qarg, DeleteQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +176,7 @@ func (model *Model[T]) DeleteMany(
 			return nil, err
 		}
 
-		err = runAfterDeleteHooks(sessCtx, d, newHookArg[T](res, DeleteQuery))
+		err = runAfterDeleteHooks(sessCtx, ds, newHookArg[T](res, DeleteQuery))
 		if err != nil {
 			return nil, err
 		}
@@ -169,24 +187,24 @@ func (model *Model[T]) DeleteMany(
 	return res.(*mongo.DeleteResult), err
 }
 
-func (model *Model[T]) FindById(
+func (model *Model[T, P]) FindById(
 	ctx context.Context, id any,
 	opts ...*mopt.FindOneOptions,
-) (*Document[T], error) {
+) (*Document[T, P], error) {
 	oid, err := getObjectId(id)
 	if err != nil {
 		return nil, err
 	}
 
-	doc := &Document[T]{}
+	doc := model.docSample()
 
 	query := bson.M{}
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindQuery).SetOptions(opts)
-
-	err = runBeforeFindHooks(ctx, doc.Doc, newHookArg[T](qarg, FindQuery))
+	err = runBeforeFindHooks(ctx, doc, newHookArg[T](qarg, FindQuery))
 	if err != nil {
 		return nil, err
 	}
+
 	query["_id"] = *oid
 
 	qopt, fopt := mopt.MergeFindOneOptions(opts...)
@@ -195,7 +213,9 @@ func (model *Model[T]) FindById(
 		opt := mopt.FindOne()
 		opt.FindOneOptions = fopt
 		opt.QueryOptions = qopt
-		docs, err := findWithPopulate(ctx, model.collection, query, doc.doc, opt)
+		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](
+			ctx, model.collection, query,
+			doc.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +231,7 @@ func (model *Model[T]) FindById(
 
 	doc.collection = model.Collection()
 
-	err = runAfterFindHooks(ctx, doc.Doc, newHookArg[T](doc, FindQuery))
+	err = runAfterFindHooks(ctx, doc, newHookArg[T](doc, FindQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -219,16 +239,15 @@ func (model *Model[T]) FindById(
 	return doc, nil
 }
 
-func (model *Model[T]) FindOne(
+func (model *Model[T, P]) FindOne(
 	ctx context.Context,
 	query bson.M,
 	opts ...*mopt.FindOneOptions,
-) (*Document[T], error) {
-	doc := &Document[T]{}
-
+) (*Document[T, P], error) {
+	doc := model.docSample()
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindQuery).SetOptions(opts)
 
-	err := runBeforeFindHooks(ctx, doc.Doc, newHookArg[T](qarg, FindQuery))
+	err := runBeforeFindHooks(ctx, doc, newHookArg[T](qarg, FindQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +257,9 @@ func (model *Model[T]) FindOne(
 		opt := mopt.FindOne()
 		opt.FindOneOptions = fopt
 		opt.QueryOptions = qopt
-		docs, err := findWithPopulate(ctx, model.collection, query, doc.doc, opt)
+		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](
+			ctx, model.collection, query,
+			doc.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -253,7 +274,7 @@ func (model *Model[T]) FindOne(
 	}
 	doc.collection = model.collection
 
-	err = runAfterFindHooks(ctx, doc.Doc, newHookArg[T](doc, FindQuery))
+	err = runAfterFindHooks(ctx, doc, newHookArg[T](doc, FindQuery))
 	if err != nil {
 		return nil, err
 	}
@@ -261,28 +282,30 @@ func (model *Model[T]) FindOne(
 	return doc, nil
 }
 
-func (model *Model[T]) Find(
+func (model *Model[T, P]) Find(
 	ctx context.Context,
 	query bson.M,
 	opts ...*mopt.FindOptions,
-) ([]*Document[T], error) {
-	d := (&Document[T]{})
+) ([]*Document[T, P], error) {
+	d := (&Document[T, P]{})
 
 	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindQuery).SetOptions(opts)
 
-	err := runBeforeFindHooks(ctx, d.Doc, newHookArg[T](qarg, FindQuery))
+	err := runBeforeFindHooks(ctx, d, newHookArg[T](qarg, FindQuery))
 	if err != nil {
 		return nil, err
 	}
 
-	docs := make([]*Document[T], 0)
+	docs := make([]*Document[T, P], 0)
 
 	qopt, fopt := mopt.MergeFindOptions(opts...)
 	if qopt.PopulateOption != nil {
 		opt := mopt.Find()
 		opt.FindOptions = fopt
 		opt.QueryOptions = qopt
-		docs, err = findWithPopulate(ctx, model.collection, query, d.doc, opt)
+		docs, err = findWithPopulate[*mopt.FindOptions, T, P](
+			ctx, model.collection, query,
+			d.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -305,13 +328,13 @@ func (model *Model[T]) Find(
 	return docs, nil
 }
 
-func (model *Model[T]) FindOneAndUpdate(
+func (model *Model[T, P]) FindOneAndUpdate(
 	ctx context.Context,
 	query bson.M,
 	update bson.M,
 	opts ...*options.FindOneAndUpdateOptions,
-) (*Document[T], error) {
-	// doc := &Document[T]{}
+) (*Document[T, P], error) {
+	// doc := &Document[T,P]{}
 	// err := model.collection.FindOneAndUpdate(ctx, query, update, opts...).Decode(doc)
 	// if err != nil {
 	// 	return nil, err
@@ -321,33 +344,36 @@ func (model *Model[T]) FindOneAndUpdate(
 	return nil, nil
 }
 
-func (model *Model[T]) UpdateOne(ctx context.Context,
+func (model *Model[T, P]) UpdateOne(ctx context.Context,
 	query bson.M, update bson.M,
 	opts ...*options.UpdateOptions,
 ) (*mongo.UpdateResult, error) {
-	d := (&Document[T]{}).Doc
+	ds := model.docSample()
 
 	qa := NewQuery[T]().SetFilter(query).
 		SetUpdate(&update).
 		SetOperation(UpdateQuery).
 		SetOptions(opts)
 
-	err := runBeforeUpdateHooks(ctx, d, newHookArg[T](qa, UpdateQuery))
+	err := runBeforeUpdateHooks(ctx, ds, newHookArg[T](qa, UpdateQuery))
 	if err != nil {
 		return nil, err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		if _, ok := update["$set"]; ok {
-			update["$set"].(bson.M)["updatedAt"] = time.Now()
-		} else {
-			update["$set"] = bson.M{"updatedAt": time.Now()}
+		if ut := ds.GetUpdatedAtTag("bson"); ut != "" && ut != "-" {
+			if _, ok := update["$set"]; ok {
+				update["$set"].(bson.M)[ut] = time.Now()
+			} else {
+				update["$set"] = bson.M{ut: time.Now()}
+			}
 		}
+
 		res, err := model.collection.UpdateOne(sessCtx, query, update, opts...)
 		if err != nil {
 			return nil, err
 		}
-		err = runAfterUpdateHooks(sessCtx, d, newHookArg[T](res, UpdateQuery))
+		err = runAfterUpdateHooks(sessCtx, ds, newHookArg[T](res, UpdateQuery))
 		if err != nil {
 			return nil, err
 		}
@@ -361,32 +387,34 @@ func (model *Model[T]) UpdateOne(ctx context.Context,
 	return res.(*mongo.UpdateResult), nil
 }
 
-func (model *Model[T]) UpdateMany(ctx context.Context,
+func (model *Model[T, P]) UpdateMany(ctx context.Context,
 	query bson.M, update bson.M, opts ...*options.UpdateOptions,
 ) (*mongo.UpdateResult, error) {
-	d := (&Document[T]{}).doc
+	ds := model.docSample()
 
 	qa := NewQuery[T]().SetFilter(query).
 		SetUpdate(&update).
 		SetOperation(UpdateQuery).
 		SetOptions(opts)
 
-	err := runBeforeUpdateHooks(ctx, d, newHookArg[T](qa, UpdateQuery))
+	err := runBeforeUpdateHooks(ctx, ds, newHookArg[T](qa, UpdateQuery))
 	if err != nil {
 		return nil, err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		if _, ok := update["$set"]; ok {
-			update["$set"].(bson.M)["updatedAt"] = time.Now()
-		} else {
-			update["$set"] = bson.M{"updatedAt": time.Now()}
+		if ut := ds.GetUpdatedAtTag("bson"); ut != "" && ut != "-" {
+			if _, ok := update["$set"]; ok {
+				update["$set"].(bson.M)[ut] = time.Now()
+			} else {
+				update["$set"] = bson.M{ut: time.Now()}
+			}
 		}
 		res, err := model.collection.UpdateMany(sessCtx, query, update, opts...)
 		if err != nil {
 			return nil, err
 		}
-		err = runAfterUpdateHooks(sessCtx, d, newHookArg[T](res, UpdateQuery))
+		err = runAfterUpdateHooks(sessCtx, ds, newHookArg[T](res, UpdateQuery))
 		return res, err
 	}
 
@@ -397,13 +425,13 @@ func (model *Model[T]) UpdateMany(ctx context.Context,
 	return res.(*mongo.UpdateResult), nil
 }
 
-func (model *Model[T]) CountDocuments(ctx context.Context,
+func (model *Model[T, P]) CountDocuments(ctx context.Context,
 	query bson.M, opts ...*options.CountOptions,
 ) (int64, error) {
 	return model.collection.CountDocuments(ctx, query, opts...)
 }
 
-func (model *Model[T]) Aggregate(
+func (model *Model[T, P]) Aggregate(
 	ctx context.Context,
 	pipeline mongo.Pipeline,
 	res interface{},
@@ -416,17 +444,17 @@ func (model *Model[T]) Aggregate(
 	return cursor.All(ctx, res)
 }
 
-func (model *Model[T]) AggregateWithCursor(
+func (model *Model[T, P]) AggregateWithCursor(
 	ctx context.Context,
 	pipeline mongo.Pipeline,
 ) (*mongo.Cursor, error) {
 	return model.collection.Aggregate(ctx, pipeline)
 }
 
-func findWithPopulate[P unionFindOpts, T Schema](
+func findWithPopulate[U unionFindOpts, T Schema, P IDefaultSchema](
 	ctx context.Context, c *mongo.Collection,
-	q bson.M, d T, opt P,
-) ([]*Document[T], error) {
+	q bson.M, d T, opt U,
+) ([]*Document[T, P], error) {
 	pipelineOpts, aggrOpts, queryOpts := mergeFindOptsWithAggregatOpts(opt)
 	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
 	var wg sync.WaitGroup
@@ -457,16 +485,61 @@ func findWithPopulate[P unionFindOpts, T Schema](
 	}
 	wg.Wait()
 
-	docs := make([]*Document[T], 0)
+	docs := make([]*Document[T, P], 0)
 	cursor, err := c.Aggregate(ctx, pipeline, aggrOpts)
 	if err != nil {
 		return nil, err
 	}
+
 	err = cursor.All(ctx, &docs)
 	if err != nil {
 		return nil, err
 	}
 	return docs, nil
+}
+
+// func (model *Model[T, P]) convertToDoc(d bson.M) (*Document[T, P], error) {
+// 	bytes, err := bson.Marshal(d)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	data := new(T)
+// 	err = bson.Unmarshal(bytes, data)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	defType := reflect.ValueOf(*new(P)).Type().Elem()
+//
+// 	bytes, err = bson.Marshal(d)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	defSchema := reflect.New(defType).Interface()
+// 	err = bson.Unmarshal(bytes, defSchema)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	return nil, nil
+// }
+//
+func (model *Model[T, P]) docSample() *Document[T, P] {
+	data := *new(T)
+
+	defType := reflect.ValueOf(*new(P)).Type().Elem()
+	defSchema := reflect.New(defType).Interface().(P)
+
+	doc := Document[T, P]{
+		IDefaultSchema: defSchema,
+		Doc:            &data,
+		collection:     model.collection,
+		doc:            data,
+		isNew:          true,
+	}
+	return &doc
 }
 
 func withTransaction(
