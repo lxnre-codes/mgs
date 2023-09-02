@@ -21,7 +21,7 @@ type Model[T Schema, P IDefaultSchema] struct {
 	collection *mongo.Collection
 }
 
-// NewModel creates a new model. T is the schema type, P is the default schema type.
+// NewModel creates a new model. T represents the schema type while P represents default schema type.
 // Panics if T or P is not a struct .
 func NewModel[T Schema, P IDefaultSchema](collection *mongo.Collection) *Model[T, P] {
 	var defSchema P
@@ -37,10 +37,12 @@ func NewModel[T Schema, P IDefaultSchema](collection *mongo.Collection) *Model[T
 	return &Model[T, P]{collection}
 }
 
+// Collection returns the [*mongo.Collection] that the model is using.
 func (model *Model[T, P]) Collection() *mongo.Collection {
 	return model.collection
 }
 
+// NewDocument creates a new [*Document] with the given data.
 func (model *Model[T, P]) NewDocument(data T) *Document[T, P] {
 	defType := reflect.ValueOf(*new(P)).Type().Elem()
 	defSchema := reflect.New(defType).Interface()
@@ -58,6 +60,9 @@ func (model *Model[T, P]) NewDocument(data T) *Document[T, P] {
 	return &doc
 }
 
+// CreateOne creates a single document in the collection.
+// It returns the created document or an error if one occurred.
+// Document is not created if any of the hooks return an error.
 func (model *Model[T, P]) CreateOne(
 	ctx context.Context, doc T,
 	opts ...*mopt.InsertOneOptions,
@@ -96,6 +101,9 @@ func (model *Model[T, P]) CreateOne(
 	return newDoc, nil
 }
 
+// CreateMany creates multiple documents in the collection.
+// It returns the created documents or an error if one occurred.
+// Documents are not created if any of the hooks return an error.
 func (model *Model[T, P]) CreateMany(
 	ctx context.Context,
 	docs []T,
@@ -130,6 +138,9 @@ func (model *Model[T, P]) CreateMany(
 	return newDocs, nil
 }
 
+// DeleteOne deletes a single document from the collection.
+// It returns the deleted result or an error if one occurred.
+// Document is not deleted if any of the hooks return an error.
 func (model *Model[T, P]) DeleteOne(
 	ctx context.Context,
 	query bson.M,
@@ -157,6 +168,9 @@ func (model *Model[T, P]) DeleteOne(
 	return res.(*mongo.DeleteResult), err
 }
 
+// DeleteMany deletes multiple documents from the collection.
+// It returns the deleted result or an error if one occurred.
+// Documents are not deleted if any of the hooks return an error.
 func (model *Model[T, P]) DeleteMany(
 	ctx context.Context,
 	query bson.M,
@@ -184,6 +198,9 @@ func (model *Model[T, P]) DeleteMany(
 	return res.(*mongo.DeleteResult), err
 }
 
+// FindById finds a single document by its id.
+// It returns the document or an error if one occurred.
+// If no document is found, it returns [mongo.ErrNoDocuments].
 func (model *Model[T, P]) FindById(
 	ctx context.Context, id any,
 	opts ...*mopt.FindOneOptions,
@@ -236,6 +253,9 @@ func (model *Model[T, P]) FindById(
 	return doc, nil
 }
 
+// FindOne finds a single document from the collection.
+// It returns the document or an error if one occurred.
+// If no document is found, it returns [mongo.ErrNoDocuments].
 func (model *Model[T, P]) FindOne(
 	ctx context.Context,
 	query bson.M,
@@ -279,6 +299,8 @@ func (model *Model[T, P]) FindOne(
 	return doc, nil
 }
 
+// Find finds multiple documents from the collection.
+// It returns the documents or an error if one occurred.
 func (model *Model[T, P]) Find(
 	ctx context.Context,
 	query bson.M,
@@ -341,6 +363,9 @@ func (model *Model[T, P]) Find(
 // 	return nil, nil
 // }
 
+// UpdateOne updates a single document in the collection.
+// It returns the update result or an error if one occurred.
+// Document is not updated if any of the hooks return an error.
 func (model *Model[T, P]) UpdateOne(ctx context.Context,
 	query bson.M, update bson.M,
 	opts ...*options.UpdateOptions,
@@ -381,6 +406,9 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context,
 	return res.(*mongo.UpdateResult), nil
 }
 
+// UpdateMany updates multiple documents in the collection.
+// It returns the update result or an error if one occurred.
+// Documents are not updated if any of the hooks return an error.
 func (model *Model[T, P]) UpdateMany(ctx context.Context,
 	query bson.M, update bson.M, opts ...*options.UpdateOptions,
 ) (*mongo.UpdateResult, error) {
@@ -419,11 +447,11 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context,
 	return res.(*mongo.UpdateResult), nil
 }
 
-func (model *Model[T, P]) CountDocuments(ctx context.Context,
-	query bson.M, opts ...*options.CountOptions,
-) (int64, error) {
-	return model.collection.CountDocuments(ctx, query, opts...)
-}
+// func (model *Model[T, P]) CountDocuments(ctx context.Context,
+// 	query bson.M, opts ...*options.CountOptions,
+// ) (int64, error) {
+// 	return model.collection.CountDocuments(ctx, query, opts...)
+// }
 
 // func (model *Model[T, P]) Aggregate(
 // 	ctx context.Context,
@@ -536,7 +564,7 @@ func getObjectId(id any) (*primitive.ObjectID, error) {
 			return nil, err
 		}
 	default:
-		return nil, fmt.Errorf("invalid ObjectID")
+		return nil, primitive.ErrInvalidHex
 	}
 	return &oid, nil
 }

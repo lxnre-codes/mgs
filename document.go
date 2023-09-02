@@ -18,6 +18,8 @@ import (
 // It must be a struct.
 type Schema interface{}
 
+// IDefaultSchema is an interface that represents the default fields that are added to a document.
+// Only structs that implement this interface can be used as a default schema.
 type IDefaultSchema interface {
 	// Generates a new ObjectID and sets it to the ID field.
 	GenerateID()
@@ -32,9 +34,9 @@ type IDefaultSchema interface {
 	// GetUpdatedAt returns the UpdatedAt field.
 	GetUpdatedAt() time.Time
 	// Sets the ID field to id.
-	SetID(id primitive.ObjectID)
+	// SetID(id primitive.ObjectID)
 	// Sets the CreatedAt field to t.
-	SetCreatedAt(t time.Time)
+	// SetCreatedAt(t time.Time)
 	// Sets the UpdatedAt field to t.
 	SetUpdatedAt(t time.Time)
 	// Returns the tag name for the UpdatedAt field. t can be either "json", "bson" or any custom tag.
@@ -42,6 +44,8 @@ type IDefaultSchema interface {
 	GetUpdatedAtTag(t string) string
 }
 
+// DefaultSchema is a struct that implements the IDefaultSchema interface.
+// It contains the default fields (ID,CreatedAt,UpdatedAt) that are added to a document.
 type DefaultSchema struct {
 	ID        primitive.ObjectID `json:"_id,omitempty"       bson:"_id,omitempty"`
 	CreatedAt time.Time          `json:"createdAt,omitempty" bson:"createdAt,omitempty"`
@@ -76,13 +80,13 @@ func (s DefaultSchema) GetUpdatedAtTag(t string) string {
 	return "updatedAt"
 }
 
-func (s *DefaultSchema) SetID(id primitive.ObjectID) {
-	s.ID = id
-}
+// func (s *DefaultSchema) SetID(id primitive.ObjectID) {
+// 	s.ID = id
+// }
 
-func (s *DefaultSchema) SetCreatedAt(t time.Time) {
-	s.CreatedAt = t
-}
+// func (s *DefaultSchema) SetCreatedAt(t time.Time) {
+// 	s.CreatedAt = t
+// }
 
 func (s *DefaultSchema) SetUpdatedAt(t time.Time) {
 	s.UpdatedAt = t
@@ -109,13 +113,15 @@ func (doc *Document[T, P]) Save(ctx context.Context) error {
 	}
 
 	arg := newHookArg[T](doc, query)
-	err := runBeforeSaveHooks(ctx, doc, arg)
-	if err != nil {
+	if err := runValidateHooks(ctx, doc, arg); err != nil {
+		return err
+	}
+	if err := runBeforeSaveHooks(ctx, doc, arg); err != nil {
 		return err
 	}
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		if doc.isNew {
+		if doc.IsNew() {
 			_, err := doc.Collection().InsertOne(sessCtx, doc)
 			if err != nil {
 				return nil, err
@@ -129,14 +135,15 @@ func (doc *Document[T, P]) Save(ctx context.Context) error {
 			}
 		}
 		arg := newHookArg[T](doc, query)
-		err = runAfterSaveHooks(sessCtx, doc, arg)
+		err := runAfterSaveHooks(sessCtx, doc, arg)
 		if err != nil {
 			doc.SetUpdatedAt(prevUpdatedAt)
 		}
+		doc.isNew = false
 		return nil, err
 	}
 
-	_, err = withTransaction(ctx, doc.Collection(), callback)
+	_, err := withTransaction(ctx, doc.Collection(), callback)
 	return err
 }
 
@@ -260,6 +267,7 @@ func (doc *Document[T, P]) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(d)
 }
 
+// Unmarshals data into the document.
 func (doc *Document[T, P]) UnmarshalBSON(data []byte) error {
 	dec, err := bson.NewDecoder(bsonrw.NewBSONValueReader(bsontype.EmbeddedDocument, data))
 	reg := bson.NewRegistryBuilder().
@@ -287,6 +295,7 @@ func (doc *Document[T, P]) UnmarshalBSON(data []byte) error {
 	return nil
 }
 
+// Returns the BSON representation of the document.
 func (doc *Document[T, P]) BSON() (bson.M, error) {
 	bts, err := doc.MarshalBSON()
 	if err != nil {
@@ -302,10 +311,13 @@ func (doc *Document[T, P]) BSON() (bson.M, error) {
 	return d, nil
 }
 
+// IsNew returns true if the document is new and has never been written to the database.
+// Otherwise, it returns false
 func (doc *Document[T, P]) IsNew() bool {
 	return doc.isNew
 }
 
+// IsModified returns true if the field has been modified.
 func (doc *Document[T, P]) IsModified(field string) bool {
 	return isModified(doc.doc, *doc.Doc, field)
 }
