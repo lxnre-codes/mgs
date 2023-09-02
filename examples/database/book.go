@@ -18,6 +18,11 @@ type Book struct {
 	DeletedAt *time.Time         `json:"-"      bson:"deletedAt"`
 }
 
+type (
+	BookModel = mgs.Model[Book, *mgs.DefaultSchema]
+	BookDoc   = mgs.Document[Book, *mgs.DefaultSchema]
+)
+
 func NewBookModel(coll *mongo.Collection) *mgs.Model[Book, *mgs.DefaultSchema] {
 	return mgs.NewModel[Book, *mgs.DefaultSchema](coll)
 }
