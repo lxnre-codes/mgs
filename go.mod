@@ -1,4 +1,4 @@
-module github.com/0x-buidl/go-mongoose
+module github.com/0x-buidl/mgs
 
 go 1.20
 

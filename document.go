@@ -103,9 +103,9 @@ type Document[T Schema, P IDefaultSchema] struct {
 func (doc *Document[T, P]) Save(ctx context.Context) error {
 	prevUpdatedAt := doc.GetUpdatedAt()
 
-	query := UpdateQuery
+	query := UpdateOne
 	if doc.isNew {
-		query = CreateQuery
+		query = CreateOne
 	}
 
 	arg := newHookArg[T](doc, query)
@@ -143,7 +143,7 @@ func (doc *Document[T, P]) Save(ctx context.Context) error {
 // Deletes a document from the database atomically.
 // The operation fails if any of the hooks return an error.
 func (doc *Document[T, P]) Delete(ctx context.Context) error {
-	arg := newHookArg[T](doc, DeleteQuery)
+	arg := newHookArg[T](doc, DeleteOne)
 	err := runBeforeDeleteHooks(ctx, doc, arg)
 	if err != nil {
 		return err
@@ -168,9 +168,9 @@ func (doc *Document[T, P]) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (doc *Document[T, P]) Update(ctx context.Context) error {
-	return nil
-}
+// func (doc *Document[T, P]) Update(ctx context.Context) error {
+// 	return nil
+// }
 
 // Returns the collection that the document belongs to.
 func (doc *Document[T, P]) Collection() *mongo.Collection {

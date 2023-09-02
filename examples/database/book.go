@@ -1,10 +1,10 @@
-package bookshop
+package database
 
 import (
 	"context"
 	"time"
 
-	mgs "github.com/0x-buidl/go-mongoose"
+	"github.com/0x-buidl/mgs"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -17,6 +17,11 @@ type Book struct {
 	Deleted   bool               `json:"-"      bson:"deleted"`
 	DeletedAt *time.Time         `json:"-"      bson:"deletedAt"`
 }
+
+type (
+	BookModel = mgs.Model[Book, *mgs.DefaultSchema]
+	BookDoc   = mgs.Document[Book, *mgs.DefaultSchema]
+)
 
 func NewBookModel(coll *mongo.Collection) *mgs.Model[Book, *mgs.DefaultSchema] {
 	return mgs.NewModel[Book, *mgs.DefaultSchema](coll)
