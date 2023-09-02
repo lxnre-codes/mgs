@@ -5,9 +5,8 @@ import (
 	"sync"
 )
 
-// HookArg is the arguments passed to a hook function.
-// It is advisable to only modify [HookArg.Data] and not the Hook receiver itself, doing so may cause unexpected behavior.
-// To avoid this, the hook receiver should not bo a pointer.
+// HookArg represents arguments passed to a hook method. It is advisable to only modify [HookArg.Data] and not the Hook receiver itself, doing so may cause unexpected behaviors.
+// To avoid modifying the reciever, ensure it's not a pointer.
 type HookArg[T Schema] struct {
 	data      interface{}
 	operation QueryOperation
@@ -17,107 +16,94 @@ func newHookArg[T Schema](data interface{}, operation QueryOperation) *HookArg[T
 	return &HookArg[T]{data, operation}
 }
 
-// Data returns the data passed to the hook.
+// Data returns the data associated with this hook.
 func (arg *HookArg[T]) Data() interface{} {
 	return arg.data
 }
 
-// Operation returns the operation being executed.
+// Operation returns the [QueryOperation] being executed.
 func (arg *HookArg[T]) Operation() QueryOperation {
 	return arg.operation
 }
 
 // BeforeCreateHook runs before executing [Model.Create] and [Model.CreateMany] operations.
-// [BeforeSaveHook] will run after this hook runs.
-// [HookArg.Data] will return pointer to document(s) being created.
+// [BeforeSaveHook] will run after this hook runs. [HookArg.Data] will return ptr to [Document](s) being created.
 type BeforeCreateHook[T Schema] interface {
 	BeforeCreate(ctx context.Context, arg *HookArg[T]) error
 }
 
-// AfterCreateHook runs after executing [Model.Create] and [Model.CreateMany] operations.
-// [AfterSaveHook] will run before this hook runs.
-// Use [options.Hook.SetDisabledHooks] to disable [AfterSaveHook].
-// [HookArg.Data] will return the document(s) created.
+// AfterCreateHook runs after documents are written to the database when executing [Model.CreateOne] and [Model.CreateMany] operations.
+// [AfterSaveHook] will run before this hook runs. [HookArg.Data] will return ptr to [Document](s) created.
 type AfterCreateHook[T Schema] interface {
 	AfterCreate(ctx context.Context, arg *HookArg[T]) error
 }
 
-// BeforeSaveHook runs before document(s) are written to the database when using
-// [Model.CreateOne], [Model.CreateMany] or [Document.Save].
-// This hook doesn't run on all [Model] Update operations.
-// To check if the document being saved is new, use the [Document.IsNew] method.
-// [HookArg.Data] will return [*Document](s) being saved.
+// BeforeSaveHook runs before [Document](s) are written to the database when using [Model.CreateOne], [Model.CreateMany] or [Document.Save].
+// This hook doesn't run on all [Model] Update operations. [HookArg.Data] will return ptr to [Document](s) being saved.
 type BeforeSaveHook[T Schema] interface {
 	BeforeSave(ctx context.Context, arg *HookArg[T]) error
 }
 
-// AfterSaveHook runs after document(s) are written to the database when using
-// [Model.CreateOne], [Model.CreateMany] or [Document.Save].
-// This hook doesn't run on all [Model] Update operations.
-// [Document.IsNew] will always return false in this hook.
-// [HookArg.Data] will return the saved document(s).
+// AfterSaveHook runs after [Document](s) are written to the database when using [Model.CreateOne], [Model.CreateMany] or [Document.Save].
+// This hook doesn't run on all [Model] Update operations. [HookArg.Data] will return ptr to [Document](s) being saved.
 type AfterSaveHook[T Schema] interface {
 	AfterSave(ctx context.Context, arg *HookArg[T]) error
 }
 
-// BeforeDeleteHook runs before a document is removed from the database.
-// [HookArg.Data] will return the [Query] being executed if this is called on a [Model],
-// otherwise it will return the [*Document] being deleted.
+// BeforeDeleteHook runs before [Document](s) are removed from the database.
+// [HookArg.Data] will return ptr to [Query] being executed if this is called on a [Model], otherwise it will return ptr to [Document] being deleted.
 type BeforeDeleteHook[T Schema] interface {
 	BeforeDelete(ctx context.Context, arg *HookArg[T]) error
 }
 
-// AfterDeleteHook runs after a document is removed from the database.
-// [HookArg.Data] will return [*mongo.DeleteResult] if this is called on a [Model],
-// otherwise it will return the deleted [*Document].
+// AfterDeleteHook runs after [Document](s) are removed from the database.
+// [HookArg.Data] will return ptr to deleted [Document] if this is called on a [Document],
+// otherwise it will return ptr to [mongo.DeleteResult].
 type AfterDeleteHook[T Schema] interface {
 	AfterDelete(ctx context.Context, arg *HookArg[T]) error
 }
 
-// BeforeFindHook runs before any find operation is executed.
-// [HookArg.Data] will allways return the query being executed [*Query].
+// BeforeFindHook runs before any find [QueryOperation] is executed.
+// [HookArg.Data] will return ptr to [Query] being ececuted.
 type BeforeFindHook[T Schema] interface {
 	BeforeFind(ctx context.Context, arg *HookArg[T]) error
 }
 
 // AfterFindHook runs after a find operation is executed.
-// [HookArg.Data] will return the found document(s) [*Document].
+// [HookArg.Data] will return ptr to found [Document](s).
 type AfterFindHook[T Schema] interface {
 	AfterFind(ctx context.Context, arg *HookArg[T]) error
 }
 
-// BeforeUpdateHook runs before a document is updated in the database.
+// BeforeUpdateHook runs before [Document](s) are updated in the database.
 // This hook also runs on `replace` operations.
-// [HookArg.Data] will return the [*Query] being executed if called on [*Model],
-// otherwise it will return [*Document] being updated.
+// [HookArg.Data] will return ptr to [Document] being updated if called on a [Document],
+// otherwise it will return ptr to [Query].
 type BeforeUpdateHook[T Schema] interface {
 	BeforeUpdate(ctx context.Context, arg *HookArg[T]) error
 }
 
 // AfterUpdateHook runs after a document is updated in the database.
 // This hook also runs on `replace` operations.
-// [HookArg.Data] will return [*mongo.UpdateResult] if called on [*Model],
-// otherwise it will return the updated [*Document].
+// [HookArg.Data] will return ptr to updated [*Document] if called on a [Document],
+// otherwise it will return ptr to [mongo.UpdateResult].
 type AfterUpdateHook[T Schema] interface {
 	AfterUpdate(ctx context.Context, arg *HookArg[T]) error
 }
 
-// ValidateHook is used to register a validation for a schema.
-// This hook runs before a document is saved to the database.
-// It only runs on [Model.CreateOne], [Model.CreateMany], [Document.Save] and [Document.Update] operations.
-// [HookArg.Data] will return the [*Document] being validated.
+// ValidateHook is used to register validation for a schema. This hook runs before a [Document] is saved to the database.
+// It only runs on [Model.CreateOne], [Model.CreateMany] and [Document.Save] operations.
+// [HookArg.Data] will return ptr to [Document] being validated.
 type ValidateHook[T Schema] interface {
 	Validate(ctx context.Context, arg *HookArg[T]) error
 }
 
-// BeforeValidateHook runs before validate hook is called.
-// [HookArg.Data] will return the [*Document] being validated.
+// BeforeValidateHook runs before validate hook is called. [HookArg.Data] will return ptr to [Document] being validated.
 type BeforeValidateHook[T Schema] interface {
 	BeforeValidate(ctx context.Context, arg *HookArg[T]) error
 }
 
-// AfterValidateHook runs after validate hook is called.
-// [HookArg.Data] will return the validated [*Document].
+// AfterValidateHook runs after validate hook is called. [HookArg.Data] will return ptr to validated [Document].
 type AfterValidateHook[T Schema] interface {
 	AfterValidate(ctx context.Context, arg *HookArg[T]) error
 }
