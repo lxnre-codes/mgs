@@ -20,11 +20,16 @@ type Query[T Schema] struct {
 type QueryOperation string
 
 const (
-	CreateQuery  QueryOperation = "create"
-	FindQuery    QueryOperation = "find"
-	ReplaceQuery QueryOperation = "replace"
-	UpdateQuery  QueryOperation = "update"
-	DeleteQuery  QueryOperation = "delete"
+	CreateOne        QueryOperation = "create-one"
+	CreateMany       QueryOperation = "create-many"
+	FindMany         QueryOperation = "find-many"
+	FindOne          QueryOperation = "find-one"
+	FindOneAndUpdate QueryOperation = "find-one-and-update"
+	Replace          QueryOperation = "replace"
+	UpdateOne        QueryOperation = "update-one"
+	UpdateMany       QueryOperation = "update-many"
+	DeleteOne        QueryOperation = "delete-one"
+	DeleteMany       QueryOperation = "delete-many"
 )
 
 // NewQuery returns and empty [Query] struct.

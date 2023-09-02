@@ -6,10 +6,11 @@ import (
 )
 
 // HookArg is the arguments passed to a hook function.
+// It is advisable to only modify [HookArg.Data] and not the Hook receiver itself, doing so may cause unexpected behavior.
+// To avoid this, the hook receiver should not bo a pointer.
 type HookArg[T Schema] struct {
 	data      interface{}
 	operation QueryOperation
-	// single    bool
 }
 
 func newHookArg[T Schema](data interface{}, operation QueryOperation) *HookArg[T] {
@@ -21,11 +22,6 @@ func (arg *HookArg[T]) Data() interface{} {
 	return arg.data
 }
 
-// // Single returns true if the hook is being called on a single operation.
-// func (arg *HookArg[T]) Single() bool {
-// 	return arg.single
-// }
-
 // Operation returns the operation being executed.
 func (arg *HookArg[T]) Operation() QueryOperation {
 	return arg.operation
@@ -33,7 +29,7 @@ func (arg *HookArg[T]) Operation() QueryOperation {
 
 // BeforeCreateHook runs before executing [Model.Create] and [Model.CreateMany] operations.
 // [BeforeSaveHook] will run after this hook runs.
-// [HookArg.Data] will return pointer to document(s) being created
+// [HookArg.Data] will return pointer to document(s) being created.
 type BeforeCreateHook[T Schema] interface {
 	BeforeCreate(ctx context.Context, arg *HookArg[T]) error
 }
@@ -41,7 +37,7 @@ type BeforeCreateHook[T Schema] interface {
 // AfterCreateHook runs after executing [Model.Create] and [Model.CreateMany] operations.
 // [AfterSaveHook] will run before this hook runs.
 // Use [options.Hook.SetDisabledHooks] to disable [AfterSaveHook].
-// [HookArg.Data] will return the document(s) created
+// [HookArg.Data] will return the document(s) created.
 type AfterCreateHook[T Schema] interface {
 	AfterCreate(ctx context.Context, arg *HookArg[T]) error
 }
@@ -50,7 +46,7 @@ type AfterCreateHook[T Schema] interface {
 // [Model.CreateOne], [Model.CreateMany] or [Document.Save].
 // This hook doesn't run on all [Model] Update operations.
 // To check if the document being saved is new, use the [Document.IsNew] method.
-// [HookArg.Data] will return [*Document] being saved.
+// [HookArg.Data] will return [*Document](s) being saved.
 type BeforeSaveHook[T Schema] interface {
 	BeforeSave(ctx context.Context, arg *HookArg[T]) error
 }
@@ -59,7 +55,7 @@ type BeforeSaveHook[T Schema] interface {
 // [Model.CreateOne], [Model.CreateMany] or [Document.Save].
 // This hook doesn't run on all [Model] Update operations.
 // [Document.IsNew] will always return false in this hook.
-// [HookArg.Data] will return the saved document.
+// [HookArg.Data] will return the saved document(s).
 type AfterSaveHook[T Schema] interface {
 	AfterSave(ctx context.Context, arg *HookArg[T]) error
 }
@@ -151,7 +147,7 @@ func (model *Model[T, P]) beforeCreateMany(
 					return
 				default:
 					newDoc := model.NewDocument(doc)
-					arg := newHookArg[T](newDoc, CreateQuery)
+					arg := newHookArg[T](newDoc, CreateMany)
 					hErr := runValidateHooks(ctx, newDoc, arg)
 					if hErr != nil {
 						cancel()
@@ -175,48 +171,12 @@ func (model *Model[T, P]) beforeCreateMany(
 	}
 
 	ds := model.docSample()
-	err = runBeforeCreateHooks(ctx, ds, newHookArg[T](docsToInsert, CreateQuery))
+	err = runBeforeCreateHooks(ctx, ds, newHookArg[T](&newDocs, CreateMany))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return newDocs, docsToInsert, nil
-}
-
-func (model *Model[T, P]) afterCreateMany(ctx context.Context, docs []*Document[T, P]) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var err error
-
-	for _, doc := range docs {
-		doc.isNew = false
-		doc.collection = model.collection
-		wg.Add(1)
-		go func(doc *Document[T, P]) {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					arg := newHookArg[T](doc, CreateQuery)
-					hErr := runAfterCreateHooks(ctx, doc, arg)
-					if hErr != nil {
-						cancel()
-						mu.Lock()
-						err = hErr
-						mu.Unlock()
-						return
-					}
-					return
-				}
-			}
-		}(doc)
-	}
-	wg.Wait()
-	return err
 }
 
 func runBeforeCreateHooks[T Schema, P IDefaultSchema](

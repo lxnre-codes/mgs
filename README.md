@@ -1,24 +1,24 @@
 # Go Mongoose driver
 
-A mongoose like go mongodb driver.
+Mgs is a mongoose-like go mongodb odm. If you've used mongoose before or you're looking for a dev friendly mongodb odm for golang, then this is for you.
 
-## Motivation behind
+## Features
 
-- Had to migrate a robust nodejs server with mongodb to a go server.
-- Couldn't find a mongoose-like package for go that does what mongoose do.
-- Decided to write my own go-mongoose driver that serves my personal needs and will probably make it more robust as time goes on.
+- Perform left join (lookup) on find operations without having to define aggregation pipelines for each query.
+- Register hooks on predefined collection schemas for CRUD operations.
+- Type safe schema & model validations.
+- Atomic WRITE operations (documents are not written to database if one or more hooks return errors).
 
-## TODO
+## Requirements
 
-Still lots to integrate, just keeping a short list i can remember here.
+- Go >=1.18 (for generics)
+- MongoDB >=4.2 (for atomic transactions)
 
-- Run hooks for all READ / WRITE operations. ✅
-- Set up go releaser.
-- Add custom options and merge with mongodb options. ✅
-- Add path populations. ✅
-- Add standard documentation & usage docs. ⌛️
-- Add Schema validations. ✅
-- Registering multiple hooks.
+## Installation
+
+```bash
+go get github.com/0x-buidl/mgs@latest
+```
 
 ## License
 
