@@ -12,7 +12,7 @@ Mgs is a mongoose-like go mongodb odm. If you've used mongoose before or you're 
 ## Requirements
 
 - Go >=1.18 (for generics)
-- MongoDB >=4.2 (for atomic transactions)
+- MongoDB >=4.4 (for atomic transactions)
 
 ## Installation
 
