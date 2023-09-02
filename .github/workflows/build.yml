@@ -2,42 +2,41 @@ name: Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.18, 1.20]
-        mongodb-version: ['4.2', '4.4', '5.0', '6.0']
+        go-version: ["1.18", "1.20"]
+        mongodb-version: ["4.2", "4.4", "5.0", "6.0"]
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup Go
-      uses: actions/setup-go@v3
-      with:
-        go-version: ${{ matrix.go-version }}
+      - uses: actions/checkout@v2
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
 
-    - name: Build
-      run: go build -v ./examples
+      - name: Build
+        run: go build -v examples/main.go
 
-    - name: Start MongoDB
-      uses: supercharge/mongodb-github-action@1.10.0
-      with:
-        mongodb-version: ${{ matrix.mongodb-version }}
-        mongodb-replica-set: test-rs
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.10.0
+        with:
+          mongodb-version: ${{ matrix.mongodb-version }}
+          mongodb-replica-set: test-rs
 
-    - name: Run Tests
-      run: go test -v -covermode=count -coverprofile=coverage.out
+      - name: Run Tests
+        run: go test -v -covermode=count -coverprofile=coverage.out
 
-    - name: Convert coverage to lcov
-      uses: jandelgado/gcov2lcov-action@v1
-      
-    - name: Coveralls 
-      uses: coverallsapp/github-action@v1.1.2
-      with:
-        github-token: ${{ secrets.ACCESS_TOKEN }}
-        path-to-lcov: coverage.lcov
+      - name: Convert coverage to lcov
+        uses: jandelgado/gcov2lcov-action@v1
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v1.1.2
+        with:
+          github-token: ${{ secrets.ACCESS_TOKEN }}
+          path-to-lcov: coverage.lcov
