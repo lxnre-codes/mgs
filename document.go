@@ -194,24 +194,12 @@ func (doc *Document[T, P]) Model() *Model[T, P] {
 // Returns doc as JSON bytes.
 func (doc *Document[T, P]) MarshalJSON() ([]byte, error) {
 	d := make(map[string]any)
-	bts, err := json.Marshal(doc.Doc)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(bts, &d)
-	if err != nil {
+	if err := internal.DecodeJSON(doc.Doc, &d); err != nil {
 		return nil, err
 	}
 
 	defDoc := make(map[string]any)
-	bts, err = json.Marshal(doc.IDefaultSchema)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(bts, &defDoc)
-	if err != nil {
+	if err := internal.DecodeJSON(doc.IDefaultSchema, &defDoc); err != nil {
 		return nil, err
 	}
 
@@ -240,25 +228,13 @@ func (doc *Document[T, P]) JSON() (map[string]any, error) {
 
 // Returns doc as BSON bytes.
 func (doc *Document[T, P]) MarshalBSON() ([]byte, error) {
-	bts, err := bson.Marshal(doc.Doc)
-	if err != nil {
-		return nil, err
-	}
-
 	var d bson.M
-	err = bson.Unmarshal(bts, &d)
-	if err != nil {
+	if err := internal.DecodeBSON(doc.Doc, &d); err != nil {
 		return nil, err
 	}
 
 	defDoc := bson.M{}
-	bts, err = bson.Marshal(doc.IDefaultSchema)
-	if err != nil {
-		return nil, err
-	}
-
-	err = bson.Unmarshal(bts, &defDoc)
-	if err != nil {
+	if err := internal.DecodeBSON(doc.IDefaultSchema, &defDoc); err != nil {
 		return nil, err
 	}
 

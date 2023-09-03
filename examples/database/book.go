@@ -2,20 +2,21 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/0x-buidl/mgs"
-	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type Book struct {
-	Title     string             `json:"title"  bson:"title"`
-	Author    primitive.ObjectID `json:"author" bson:"author"`
-	Price     float64            `json:"price"  bson:"price"`
-	Deleted   bool               `json:"-"      bson:"deleted"`
-	DeletedAt *time.Time         `json:"-"      bson:"deletedAt"`
+	Title string `json:"title"    bson:"title"`
+	// ObjectID or Author Object
+	Author    interface{}   `json:"author"   bson:"author"`
+	Reviews   []interface{} `json:"chapters" bson:"chapters"`
+	Deleted   bool          `json:"-"        bson:"deleted"`
+	DeletedAt *time.Time    `json:"-"        bson:"deletedAt"`
 }
 
 type (
@@ -27,9 +28,15 @@ func NewBookModel(coll *mongo.Collection) *BookModel {
 	return mgs.NewModel[Book, *mgs.DefaultSchema](coll)
 }
 
-func (book Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
-	v := validator.New()
-	return v.StructCtx(ctx, book)
+func (b Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
+	var err error
+
+	doc := arg.Data().(*BookDoc)
+	if _, ok := doc.Doc.Author.(primitive.ObjectID); !ok {
+		err = fmt.Errorf("author must be ObjectID")
+	}
+
+	return err
 }
 
 func (book Book) BeforeValidate(ctx context.Context, arg *mgs.HookArg[Book]) error {
@@ -65,6 +72,8 @@ func (book Book) AfterDelete(ctx context.Context, arg *mgs.HookArg[Book]) error 
 }
 
 func (book Book) BeforeFind(ctx context.Context, arg *mgs.HookArg[Book]) error {
+	q := arg.Data().(*mgs.Query[Book]).Filter
+	q["deleted"] = false
 	return nil
 }
 

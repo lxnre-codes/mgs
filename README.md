@@ -6,7 +6,7 @@
 [![Go MongoDB](https://img.shields.io/badge/mongodb-driver-g?logo=mongodb)](https://pkg.go.dev/go.mongodb.org/mongo-driver/mongo)
 [![Go Report Card](https://goreportcard.com/badge/github.com/0x-buidl/mgs)](https://goreportcard.com/report/github.com/0x-buidl/mgs)
 [![Go Reference](https://pkg.go.dev/badge/github.com/0x-buidl/mgs.svg)](https://pkg.go.dev/github.com/0x-buidl/mgs)
-[![Coverage Status](https://coveralls.io/repos/github/0x-buidl/mgs/badge.svg)](https://coveralls.io/github/0x-buidl/mgs)
+[![Coverage Status](https://coveralls.io/repos/github/0x-buidl/mgs/badge.svg?branch=main)](https://coveralls.io/github/0x-buidl/mgs)
 
 Mgs is a mongoose-like [go mongodb](https://github.com/mongodb/mongo-go-driver) odm. If you've used [mongoose.js](https://mongoosejs.com), or you're looking for a dev friendly [mongodb](https://www.mongodb.com) odm for golang, then this is for you.
 

@@ -17,40 +17,40 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type DefaultSchema bson.M
+type TestDefaultSchema bson.M
 
-func (s *DefaultSchema) GenerateID() {
+func (s *TestDefaultSchema) GenerateID() {
 }
 
-func (s *DefaultSchema) GenerateCreatedAt() {
+func (s *TestDefaultSchema) GenerateCreatedAt() {
 }
 
-func (s *DefaultSchema) GenerateUpdatedAt() {
+func (s *TestDefaultSchema) GenerateUpdatedAt() {
 }
 
-func (s DefaultSchema) GetID() primitive.ObjectID {
+func (s TestDefaultSchema) GetID() primitive.ObjectID {
 	return primitive.ObjectID{}
 }
 
-func (s DefaultSchema) GetCreatedAt() time.Time {
+func (s TestDefaultSchema) GetCreatedAt() time.Time {
 	return time.Time{}
 }
 
-func (s DefaultSchema) GetUpdatedAt() time.Time {
+func (s TestDefaultSchema) GetUpdatedAt() time.Time {
 	return time.Time{}
 }
 
-func (s DefaultSchema) GetUpdatedAtTag(t string) string {
+func (s TestDefaultSchema) GetUpdatedAtTag(t string) string {
 	return ""
 }
 
-func (s *DefaultSchema) SetID(id primitive.ObjectID) {
-}
+// func (s *TestDefaultSchema) SetID(id primitive.ObjectID) {
+// }
 
-func (s *DefaultSchema) SetCreatedAt(t time.Time) {
-}
+// func (s *TestDefaultSchema) SetCreatedAt(t time.Time) {
+// }
 
-func (s *DefaultSchema) SetUpdatedAt(t time.Time) {
+func (s *TestDefaultSchema) SetUpdatedAt(t time.Time) {
 }
 
 type Book struct {
@@ -69,27 +69,6 @@ type Price struct {
 	Decimals int64  `bson:"decimals" json:"decimals"`
 }
 
-type BookDoc = mgs.Document[Book, *mgs.DefaultSchema]
-
-func (b *Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
-	var err error
-	for _, author := range b.Authors {
-		if _, ok := author.(primitive.ObjectID); !ok {
-			err = fmt.Errorf("author must be ObjectID")
-			break
-		}
-	}
-	if err == nil {
-		for _, chapter := range b.Chapters {
-			if _, ok := chapter.Author.(primitive.ObjectID); !ok {
-				err = fmt.Errorf("chapter.author must be ObjectID")
-				break
-			}
-		}
-	}
-	return err
-}
-
 type Author struct {
 	Name      string     `bson:"name"      json:"name" validate:"required"`
 	Deleted   bool       `bson:"deleted"   json:"-"`
@@ -104,6 +83,8 @@ type Chapter struct {
 	Author interface{} `bson:"author" json:"author" validate:"required"`
 }
 
+type BookDoc = mgs.Document[Book, *mgs.DefaultSchema]
+
 func TestNewModel(t *testing.T) {
 	t.Run("Should panic if schema is is not a struct", func(t *testing.T) {
 		assert.Panics(t, func() {
@@ -111,7 +92,7 @@ func TestNewModel(t *testing.T) {
 		}, "NewModel should panic if schema is not a struct")
 
 		assert.Panics(t, func() {
-			mgs.NewModel[Book, *DefaultSchema](nil)
+			mgs.NewModel[Book, *TestDefaultSchema](nil)
 		}, "NewModel should panic if defaultSchema is not a struct")
 	})
 }
