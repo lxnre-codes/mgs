@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -296,6 +297,159 @@ func TestModel_Populate(t *testing.T) {
 		}
 
 		// fmt.Printf("---------- %d paths populated ---------- \n", pathsPopulated)
+	})
+}
+
+func TestModelMongodbErrors(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	defer mt.Close()
+
+	merr := bson.D{{Key: "ok", Value: 0}}
+	mbook := bson.D{
+		{Key: "_id", Value: primitive.NewObjectID()},
+		{Key: "title", Value: "foo"},
+	}
+
+	fopt := options.Find()
+	fopt.SetProjection(bson.D{{Key: "name", Value: 1}, {Key: "_id", Value: 0}})
+	popOpts := mopt.PopulateOption{
+		mopt.Populate().SetPath("chapters.author").SetCollection("authors").SetOptions(fopt),
+		mopt.Populate().SetPath("authors").SetCollection("authors").SetOptions(fopt),
+	}
+
+	mt.Run("Should return error while creating", func(mt *mtest.T) {
+		bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](mt.Coll)
+		ctx := context.Background()
+
+		mt.AddMockResponses(merr)
+		_, err := bookModel.CreateOne(ctx, Book{})
+		assert.Error(t, err, "CreateOne should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.CreateMany(ctx, []Book{{}})
+		assert.Error(t, err, "CreateMany should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		book := bookModel.NewDocument(Book{})
+		err = book.Save(ctx)
+		assert.Error(t, err, "Save should return error")
+		assert.Equal(t, err.Error(), "command failed")
+	})
+
+	mt.Run("Should return error while updating", func(mt *mtest.T) {
+		bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](mt.Coll)
+		ctx := context.Background()
+
+		mt.AddMockResponses(bson.D{{Key: "ok", Value: 0}})
+		_, err := bookModel.UpdateOne(ctx, bson.M{}, bson.M{})
+		assert.Error(t, err, "update one should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.UpdateMany(ctx, bson.M{}, bson.M{})
+		assert.Error(t, err, "update many should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(mtest.CreateCursorResponse(1, "foo.bar", mtest.FirstBatch, mbook))
+		book, err := bookModel.FindOne(ctx, bson.M{})
+		assert.NoError(t, err, "find one should not return error")
+
+		mt.AddMockResponses(merr)
+		book.Doc.Title = "new title"
+		err = book.Save(ctx)
+		assert.Error(t, err, "Save should return error")
+		assert.Equal(t, err.Error(), "command failed")
+	})
+
+	mt.Run("Should return error while deleting", func(mt *mtest.T) {
+		bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](mt.Coll)
+		ctx := context.Background()
+
+		mt.AddMockResponses(merr)
+		_, err := bookModel.DeleteOne(ctx, bson.M{})
+		assert.Error(t, err, "delete one should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.DeleteMany(ctx, bson.M{})
+		assert.Error(t, err, "delete many should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(mtest.CreateCursorResponse(1, "foo.bar", mtest.FirstBatch, mbook))
+		book, err := bookModel.FindOne(ctx, bson.M{})
+		assert.NoError(t, err, "find one should not return error")
+
+		mt.AddMockResponses(merr)
+		err = book.Delete(ctx)
+		assert.Error(t, err, "Delete should return error")
+		assert.Equal(t, err.Error(), "command failed")
+	})
+
+	mt.Run("Should return error while finding", func(mt *mtest.T) {
+		bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](mt.Coll)
+		ctx := context.Background()
+
+		mt.AddMockResponses(merr)
+		_, err := bookModel.Find(ctx, bson.M{})
+		assert.Error(t, err, "find should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		// Test that Find throws error at cursor decode stage
+		mt.AddMockResponses(mtest.CreateCursorResponse(3, "foo.bar", mtest.FirstBatch, mbook))
+		_, err = bookModel.Find(ctx, bson.M{})
+		assert.Error(t, err, "find should return error")
+		assert.Equal(t, err.Error(), "no responses remaining")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.FindOne(ctx, bson.M{})
+		assert.Error(t, err, "find one should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.FindById(ctx, primitive.NewObjectID())
+		assert.Error(t, err, "find by id should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		// FIND WITH POPULATE
+		findManyOpts := mopt.Find()
+		findManyOpts.SetPopulate(popOpts...)
+		mt.AddMockResponses(merr)
+		_, err = bookModel.Find(ctx, bson.M{}, findManyOpts)
+		assert.Error(t, err, "find should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		// Test that Find throws error at cursor decode stage when using populate
+		mt.AddMockResponses(mtest.CreateCursorResponse(3, "foo.bar", mtest.FirstBatch, mbook))
+		_, err = bookModel.Find(ctx, bson.M{}, findManyOpts)
+		assert.Error(t, err, "find should return error")
+		assert.Equal(t, err.Error(), "no responses remaining")
+
+		findOneOpts := mopt.FindOne()
+		findOneOpts.SetPopulate(popOpts...)
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.FindOne(ctx, bson.M{}, findOneOpts)
+		assert.Error(t, err, "find one should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		mt.AddMockResponses(merr)
+		_, err = bookModel.FindById(ctx, primitive.NewObjectID(), findOneOpts)
+		assert.Error(t, err, "find by id should return error")
+		assert.Equal(t, err.Error(), "command failed")
+
+		// Test Returns error no documents when no documents are found
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, "foo.bar", mtest.FirstBatch))
+		_, err = bookModel.FindOne(ctx, bson.M{}, findOneOpts)
+		assert.Error(t, err, "find one should return error")
+		assert.Equal(t, err, mongo.ErrNoDocuments)
+
+		// Test Returns error no documents when no documents are found
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, "foo.bar", mtest.FirstBatch))
+		_, err = bookModel.FindById(ctx, primitive.NewObjectID(), findOneOpts)
+		assert.Error(t, err, "find by id should return error")
+		assert.Equal(t, err, mongo.ErrNoDocuments)
 	})
 }
 

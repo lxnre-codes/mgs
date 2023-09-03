@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
-	"strings"
 	"time"
 
+	"github.com/0x-buidl/mgs/internal"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
@@ -35,8 +35,10 @@ type IDefaultSchema interface {
 	GetUpdatedAt() time.Time
 	// Sets the ID field to id.
 	// SetID(id primitive.ObjectID)
+
 	// Sets the CreatedAt field to t.
 	// SetCreatedAt(t time.Time)
+
 	// Sets the UpdatedAt field to t.
 	SetUpdatedAt(t time.Time)
 	// Returns the tag name for the UpdatedAt field. t can be either "json", "bson" or any custom tag.
@@ -102,8 +104,8 @@ type Document[T Schema, P IDefaultSchema] struct {
 	isNew          bool
 }
 
-// Saves a document to the database atomically. This method creates a new document if the document is not already existing, Otherwise, it updates the existing document.
-// The operation fails if any of the hooks return an error.
+// Saves [Documet] (doc) to the database atomically. This method creates a new document if the document is not already existing, Otherwise, it updates the existing document.
+// This operation fails if any of the hooks return an error.
 func (doc *Document[T, P]) Save(ctx context.Context) error {
 	prevUpdatedAt := doc.GetUpdatedAt()
 
@@ -147,8 +149,8 @@ func (doc *Document[T, P]) Save(ctx context.Context) error {
 	return err
 }
 
-// Deletes a document from the database atomically.
-// The operation fails if any of the hooks return an error.
+// Deletes [Document] (doc) from the database atomically.
+// This operation fails if any of the hooks return an error.
 func (doc *Document[T, P]) Delete(ctx context.Context) error {
 	arg := newHookArg[T](doc, DeleteOne)
 	err := runBeforeDeleteHooks(ctx, doc, arg)
@@ -179,17 +181,17 @@ func (doc *Document[T, P]) Delete(ctx context.Context) error {
 // 	return nil
 // }
 
-// Returns the collection that the document belongs to.
+// Returns the collection that doc belongs to.
 func (doc *Document[T, P]) Collection() *mongo.Collection {
 	return doc.collection
 }
 
-// Returns the model that the document belongs to.
+// Returns the model that the doc belongs to.
 func (doc *Document[T, P]) Model() *Model[T, P] {
 	return NewModel[T, P](doc.collection)
 }
 
-// Returns the document as a JSON bytes.
+// Returns doc as JSON bytes.
 func (doc *Document[T, P]) MarshalJSON() ([]byte, error) {
 	d := make(map[string]any)
 	bts, err := json.Marshal(doc.Doc)
@@ -220,7 +222,7 @@ func (doc *Document[T, P]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d)
 }
 
-// Returns the JSON representation of the document.
+// Returns the JSON representation of doc.
 func (doc *Document[T, P]) JSON() (map[string]any, error) {
 	bts, err := doc.MarshalJSON()
 	if err != nil {
@@ -236,7 +238,7 @@ func (doc *Document[T, P]) JSON() (map[string]any, error) {
 	return d, nil
 }
 
-// Returns the document as a BSON bytes.
+// Returns doc as BSON bytes.
 func (doc *Document[T, P]) MarshalBSON() ([]byte, error) {
 	bts, err := bson.Marshal(doc.Doc)
 	if err != nil {
@@ -267,7 +269,7 @@ func (doc *Document[T, P]) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(d)
 }
 
-// Unmarshals data into the document.
+// Unmarshals data into the doc.
 func (doc *Document[T, P]) UnmarshalBSON(data []byte) error {
 	dec, err := bson.NewDecoder(bsonrw.NewBSONValueReader(bsontype.EmbeddedDocument, data))
 	reg := bson.NewRegistryBuilder().
@@ -295,7 +297,7 @@ func (doc *Document[T, P]) UnmarshalBSON(data []byte) error {
 	return nil
 }
 
-// Returns the BSON representation of the document.
+// Returns BSON representation of doc.
 func (doc *Document[T, P]) BSON() (bson.M, error) {
 	bts, err := doc.MarshalBSON()
 	if err != nil {
@@ -319,28 +321,5 @@ func (doc *Document[T, P]) IsNew() bool {
 
 // IsModified returns true if the field has been modified.
 func (doc *Document[T, P]) IsModified(field string) bool {
-	return isModified(doc.doc, *doc.Doc, field)
-}
-
-func isModified(old, newV interface{}, field string) bool {
-	o := reflect.ValueOf(old)
-	n := reflect.ValueOf(newV)
-
-	parts := strings.Split(field, ".")
-
-	if len(parts) == 1 {
-		of := o.FieldByName(field)
-		nf := n.FieldByName(field)
-		return of.IsValid() && nf.IsValid() &&
-			!reflect.DeepEqual(of.Interface(), nf.Interface())
-	} else {
-		of := o.FieldByName(parts[0])
-		nf := n.FieldByName(parts[0])
-
-		if !of.IsValid() || !nf.IsValid() {
-			return false
-		}
-
-		return isModified(of.Interface(), nf.Interface(), strings.Join(parts[1:], "."))
-	}
+	return internal.IsModified(doc.doc, *doc.Doc, field)
 }
