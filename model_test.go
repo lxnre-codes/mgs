@@ -173,7 +173,7 @@ func TestModel_Find(t *testing.T) {
 	bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](db.Collection("books"))
 	genBooks := generateBooks(ctx, db)
 
-	t.Run("Should return error when FindById recieves invalid id", func(t *testing.T) {
+	t.Run("Should return error when FindById receives invalid id", func(t *testing.T) {
 		_, err := bookModel.FindById(ctx, "invalid")
 		assert.Equal(
 			t, err, primitive.ErrInvalidHex,
@@ -187,7 +187,7 @@ func TestModel_Find(t *testing.T) {
 		)
 	})
 
-	t.Run("Should pass if FindById recieves valid id", func(t *testing.T) {
+	t.Run("Should pass if FindById receives valid id", func(t *testing.T) {
 		_, err := bookModel.FindById(ctx, genBooks[0].GetID().Hex())
 		assert.NoError(t, err, "FindByID should pass if id is valid ObjectID hex")
 

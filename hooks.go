@@ -6,7 +6,7 @@ import (
 )
 
 // HookArg represents arguments passed to a hook method. It is advisable to only modify [HookArg.Data] and not the Hook receiver itself, doing so may cause unexpected behaviors.
-// To avoid modifying the reciever, ensure it's not a pointer.
+// To avoid modifying the receiver, ensure it's not a pointer.
 type HookArg[T Schema] struct {
 	data      interface{}
 	operation QueryOperation
