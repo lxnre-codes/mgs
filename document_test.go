@@ -37,3 +37,29 @@ func TestSaveDocument(t *testing.T) {
 		assert.Equal(t, "The Lord of the Rings: The Fellowship of the Ring", doc.Doc.Title)
 	})
 }
+
+func TestMarshalDocument(t *testing.T) {
+	t.Run("Should return error when marshaling document", func(t *testing.T) {
+		doc := mgs.Document[TestDefaultSchema, *TestDefaultSchema]{
+			Doc: &TestDefaultSchema{"foo": make(chan int)},
+		}
+
+		_, err := doc.MarshalJSON()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "json: unsupported type: chan int")
+
+		_, err = doc.MarshalBSON()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no encoder found for chan int")
+
+		doc.Doc = &TestDefaultSchema{"foo": "bar"}
+		doc.IDefaultSchema = &TestDefaultSchema{"foo": make(chan string)}
+		_, err = doc.MarshalJSON()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "json: unsupported type: chan string")
+
+		_, err = doc.MarshalBSON()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no encoder found for chan string")
+	})
+}

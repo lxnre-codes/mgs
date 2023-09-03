@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func IsModified(old, newV interface{}, field string) bool {
@@ -26,4 +29,30 @@ func IsModified(old, newV interface{}, field string) bool {
 
 		return IsModified(of.Interface(), nf.Interface(), strings.Join(parts[1:], "."))
 	}
+}
+
+func DecodeJSON(d, v interface{}) error {
+	bts, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(bts, v)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DecodeBSON(d, v interface{}) error {
+  bts, err := bson.Marshal(d)
+  if err != nil {
+    return err
+  }
+
+  err = bson.Unmarshal(bts, v)
+  if err != nil {
+    return err
+  }
+  return nil
 }
