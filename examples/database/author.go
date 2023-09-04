@@ -23,6 +23,6 @@ func NewAuthorModel(coll *mongo.Collection) *AuthorModel {
 	return mgs.NewModel[Author, *mgs.DefaultSchema](coll)
 }
 
-func (a Author) Validate(ctx context.Context, arg *mgs.HookArg[Author]) error {
+func (Author) Validate(ctx context.Context, arg *mgs.HookArg[Author]) error {
 	return nil
 }

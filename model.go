@@ -152,7 +152,7 @@ func (model *Model[T, P]) DeleteOne(
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		ds := model.docSample()
 
-		qarg := NewQuery[T]().SetFilter(query).SetOperation(DeleteOne).SetOptions(opts)
+		qarg := NewQuery[T]().SetFilter(&query).SetOperation(DeleteOne).SetOptions(opts)
 		err := runBeforeDeleteHooks(ctx, ds, newHookArg[T](qarg, DeleteOne))
 		if err != nil {
 			return nil, err
@@ -186,7 +186,7 @@ func (model *Model[T, P]) DeleteMany(
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		ds := model.docSample()
 
-		qarg := NewQuery[T]().SetFilter(query).SetOperation(DeleteMany).SetOptions(opts)
+		qarg := NewQuery[T]().SetFilter(&query).SetOperation(DeleteMany).SetOptions(opts)
 		err := runBeforeDeleteHooks(ctx, ds, newHookArg[T](qarg, DeleteMany))
 		if err != nil {
 			return nil, err
@@ -224,7 +224,7 @@ func (model *Model[T, P]) FindById(
 	doc := model.docSample()
 
 	query := bson.M{}
-	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindOne).SetOptions(opts)
+	qarg := NewQuery[T]().SetFilter(&query).SetOperation(FindOne).SetOptions(opts)
 	err = runBeforeFindHooks(ctx, doc, newHookArg[T](qarg, FindOne))
 	if err != nil {
 		return nil, err
@@ -275,7 +275,7 @@ func (model *Model[T, P]) FindOne(
 ) (*Document[T, P], error) {
 	doc := model.docSample()
 
-	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindOne).SetOptions(opts)
+	qarg := NewQuery[T]().SetFilter(&query).SetOperation(FindOne).SetOptions(opts)
 	err := runBeforeFindHooks(ctx, doc, newHookArg[T](qarg, FindOne))
 	if err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (model *Model[T, P]) Find(
 ) ([]*Document[T, P], error) {
 	d := model.docSample()
 
-	qarg := NewQuery[T]().SetFilter(query).SetOperation(FindMany).SetOptions(opts)
+	qarg := NewQuery[T]().SetFilter(&query).SetOperation(FindMany).SetOptions(opts)
 	err := runBeforeFindHooks(ctx, d, newHookArg[T](qarg, FindMany))
 	if err != nil {
 		return nil, err
@@ -391,7 +391,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context,
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		qa := NewQuery[T]().SetFilter(query).
+		qa := NewQuery[T]().SetFilter(&query).
 			SetUpdate(&update).
 			SetOperation(UpdateOne).
 			SetOptions(opts)
@@ -433,7 +433,7 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context,
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		qa := NewQuery[T]().SetFilter(query).
+		qa := NewQuery[T]().SetFilter(&query).
 			SetUpdate(&update).
 			SetOperation(UpdateMany).
 			SetOptions(opts)

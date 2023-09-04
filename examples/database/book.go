@@ -28,26 +28,26 @@ func NewBookModel(coll *mongo.Collection) *BookModel {
 	return mgs.NewModel[Book, *mgs.DefaultSchema](coll)
 }
 
-func (b Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
+func (Book) Validate(ctx context.Context, arg *mgs.HookArg[Book]) error {
 	var err error
 
-	doc := arg.Data().(*BookDoc)
-	if _, ok := doc.Doc.Author.(primitive.ObjectID); !ok {
+	book := arg.Data().(*BookDoc)
+	if _, ok := book.Doc.Author.(primitive.ObjectID); !ok {
 		err = fmt.Errorf("author must be ObjectID")
 	}
 
 	return err
 }
 
-func (book Book) BeforeValidate(ctx context.Context, arg *mgs.HookArg[Book]) error {
+func (Book) BeforeValidate(ctx context.Context, arg *mgs.HookArg[Book]) error {
 	return nil
 }
 
-func (book Book) AfterValidate(ctx context.Context, arg *mgs.HookArg[Book]) error {
+func (Book) AfterValidate(ctx context.Context, arg *mgs.HookArg[Book]) error {
 	return nil
 }
 
-func (book Book) BeforeCreate(ctx context.Context, arg *mgs.HookArg[Book]) error {
+func (Book) BeforeCreate(ctx context.Context, arg *mgs.HookArg[Book]) error {
 	return nil
 }
 
@@ -72,7 +72,7 @@ func (book Book) AfterDelete(ctx context.Context, arg *mgs.HookArg[Book]) error 
 }
 
 func (book Book) BeforeFind(ctx context.Context, arg *mgs.HookArg[Book]) error {
-	q := arg.Data().(*mgs.Query[Book]).Filter
+	q := *arg.Data().(*mgs.Query[Book]).Filter
 	q["deleted"] = false
 	return nil
 }
