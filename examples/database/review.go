@@ -23,6 +23,6 @@ func NewReviewModel(coll *mongo.Collection) *ReviewModel {
 	return mgs.NewModel[Review, *mgs.DefaultSchema](coll)
 }
 
-func (r Review) Validate(ctx context.Context, arg *mgs.HookArg[Review]) error {
+func (Review) Validate(ctx context.Context, arg *mgs.HookArg[Review]) error {
 	return nil
 }

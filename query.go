@@ -7,7 +7,7 @@ import (
 // Query is a struct that holds information about the current operation beign executed on a model.
 type Query[T Schema] struct {
 	// The document filter for this operation
-	Filter bson.M
+	Filter *bson.M
 	// Update payload if Operation is an update operation
 	Update *bson.M
 	// Options specific to the current operation
@@ -38,7 +38,7 @@ func NewQuery[T Schema]() *Query[T] {
 }
 
 // SetFilter sets the Query filter field.
-func (q *Query[T]) SetFilter(f bson.M) *Query[T] {
+func (q *Query[T]) SetFilter(f *bson.M) *Query[T] {
 	q.Filter = f
 	return q
 }
