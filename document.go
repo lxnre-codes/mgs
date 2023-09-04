@@ -248,13 +248,13 @@ func (doc *Document[T, P]) MarshalBSON() ([]byte, error) {
 // Unmarshals data into the doc.
 func (doc *Document[T, P]) UnmarshalBSON(data []byte) error {
 	dec, err := bson.NewDecoder(bsonrw.NewBSONValueReader(bsontype.EmbeddedDocument, data))
+	if err != nil {
+		return err
+	}
 	reg := bson.NewRegistryBuilder().
 		RegisterTypeMapEntry(bsontype.EmbeddedDocument, reflect.TypeOf(bson.M{})).
 		Build()
 	dec.SetRegistry(reg)
-	if err != nil {
-		return err
-	}
 
 	var nd T
 	err = dec.Decode(&nd)

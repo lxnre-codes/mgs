@@ -75,7 +75,14 @@ func main() {
 	if err != mongo.ErrNoDocuments {
 		log.Fatal("should be mongo.ErrNoDocuments")
 	}
+	if book != nil {
+		log.Fatal("book should be nil")
+	}
 
+	book, err = bookModel.FindById(ctx, books[1].GetID())
+	if err != mongo.ErrNoDocuments {
+		log.Fatal("should be mongo.ErrNoDocuments")
+	}
 	if book != nil {
 		log.Fatal("book should be nil")
 	}
