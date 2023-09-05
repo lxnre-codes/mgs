@@ -10,10 +10,56 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type UnionFindOpts interface {
+	*mopt.FindOptions | *mopt.FindOneOptions
+}
+
+func BuildPopulatePipeline[P UnionFindOpts](
+	d any, q bson.M, opt P,
+) (mongo.Pipeline, *options.AggregateOptions, error) {
+	pipelineOpts, aggrOpts, queryOpts := mergeFindOptsWithAggregatOpts(opt)
+	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var err error
+	for _, pop := range *queryOpts.PopulateOption {
+		wg.Add(1)
+		func(pop *mopt.PopulateOptions) {
+			defer wg.Done()
+			mu.Lock()
+			if err != nil {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
+
+			pipe, pErr := getPopulateStages(d, pop)
+
+			mu.Lock()
+			if pErr != nil {
+				err = pErr
+				mu.Unlock()
+				return
+			}
+			pipeline = append(pipeline, pipe...)
+			mu.Unlock()
+		}(pop)
+	}
+	wg.Wait()
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return pipeline, aggrOpts, nil
+}
+
 // TODO: custom populate errors
-func GetPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, error) {
+
+func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, error) {
 	lookupPipeline := mongo.Pipeline{
 		bson.D{
 			{
@@ -42,7 +88,7 @@ func GetPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 				}
 				mu.Unlock()
 
-				pipe, pErr := GetPopulateStages(opt.Schema, p)
+				pipe, pErr := getPopulateStages(opt.Schema, p)
 
 				mu.Lock()
 				if pErr != nil {
@@ -182,6 +228,102 @@ func GetPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 	}
 	populatePipeline = append(populatePipeline, windPaths...)
 	return populatePipeline, nil
+}
+
+// TODO: merge these options with aggregate options if possible
+// if opt.AllowPartialResults != nil {
+// }
+// if opt.CursorType != nil {
+// }
+// if opt.Max != nil {
+// }
+// if opt.Min != nil {
+// }
+// if opt.NoCursorTimeout != nil {
+// }
+// if opt.OplogReplay != nil {
+// }
+// if opt.ReturnKey != nil {
+// }
+// if opt.ShowRecordID != nil {
+// }
+// if opt.Snapshot != nil {
+// }
+
+func mergeFindOptsWithAggregatOpts[T UnionFindOpts](
+	opt T,
+) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
+	aggOpts, pipelineOpts, queryOpts := options.Aggregate(), mongo.Pipeline{}, mopt.Query()
+	switch opt := any(opt).(type) {
+	case *mopt.FindOptions:
+		if opt.AllowDiskUse != nil {
+			aggOpts.SetAllowDiskUse(*opt.AllowDiskUse)
+		}
+		if opt.BatchSize != nil {
+			aggOpts.SetBatchSize(*opt.BatchSize)
+		}
+		if opt.Collation != nil {
+			aggOpts.SetCollation(opt.Collation)
+		}
+		if opt.Comment != nil {
+			aggOpts.SetComment(*opt.Comment)
+		}
+		if opt.Hint != nil {
+			aggOpts.SetHint(opt.Hint)
+		}
+		if opt.MaxAwaitTime != nil {
+			aggOpts.SetMaxAwaitTime(*opt.MaxAwaitTime)
+		}
+		if opt.MaxTime != nil {
+			aggOpts.SetMaxTime(*opt.MaxTime)
+		}
+		if opt.Let != nil {
+			aggOpts.SetLet(opt.Let)
+		}
+		if opt.Sort != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$sort", Value: opt.Sort}})
+		}
+		if opt.Limit != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$limit", Value: *opt.Limit}})
+		}
+		if opt.Skip != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$skip", Value: *opt.Skip}})
+		}
+		if opt.Projection != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$project", Value: opt.Projection}})
+		}
+		queryOpts = opt.QueryOptions
+	case *mopt.FindOneOptions:
+		if opt.BatchSize != nil {
+			aggOpts.SetBatchSize(*opt.BatchSize)
+		}
+		if opt.Collation != nil {
+			aggOpts.SetCollation(opt.Collation)
+		}
+		if opt.Comment != nil {
+			aggOpts.SetComment(*opt.Comment)
+		}
+		if opt.Hint != nil {
+			aggOpts.SetHint(opt.Hint)
+		}
+		if opt.MaxAwaitTime != nil {
+			aggOpts.SetMaxAwaitTime(*opt.MaxAwaitTime)
+		}
+		if opt.MaxTime != nil {
+			aggOpts.SetMaxTime(*opt.MaxTime)
+		}
+		if opt.Sort != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$sort", Value: opt.Sort}})
+		}
+		if opt.Skip != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$skip", Value: *opt.Skip}})
+		}
+		if opt.Projection != nil {
+			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$project", Value: opt.Projection}})
+		}
+		queryOpts = opt.QueryOptions
+	}
+	return pipelineOpts, aggOpts, queryOpts
 }
 
 func getStructFields(t reflect.Type) map[string]reflect.StructField {
