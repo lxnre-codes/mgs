@@ -3,7 +3,6 @@ package mgs
 import (
 	"context"
 	"reflect"
-	"sync"
 	"time"
 
 	int "github.com/0x-buidl/mgs/internal"
@@ -502,35 +501,10 @@ func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](
 	ctx context.Context, c *mongo.Collection,
 	q bson.M, d T, opt U,
 ) ([]*Document[T, P], error) {
-	pipelineOpts, aggrOpts, queryOpts := int.MergeFindOptsWithAggregatOpts(opt)
-	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var err error
-	for _, pop := range *queryOpts.PopulateOption {
-		wg.Add(1)
-		func(pop *mopt.PopulateOptions) {
-			defer wg.Done()
-			mu.Lock()
-			if err != nil {
-				mu.Unlock()
-				return
-			}
-			mu.Unlock()
-
-			pipe, pErr := int.GetPopulateStages(d, pop)
-
-			mu.Lock()
-			if pErr != nil {
-				err = pErr
-				mu.Unlock()
-				return
-			}
-			pipeline = append(pipeline, pipe...)
-			mu.Unlock()
-		}(pop)
+	pipeline, aggrOpts, err := int.BuildPopulatePipeline(d, q, opt)
+	if err != nil {
+		return nil, err
 	}
-	wg.Wait()
 
 	docs := make([]*Document[T, P], 0)
 	cursor, err := c.Aggregate(ctx, pipeline, aggrOpts)
