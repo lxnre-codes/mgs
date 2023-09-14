@@ -248,9 +248,7 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 // if opt.Snapshot != nil {
 // }
 
-func mergeFindOptsWithAggregatOpts[T UnionFindOpts](
-	opt T,
-) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
+func mergeFindOptsWithAggregatOpts[T UnionFindOpts](opt T) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
 	aggOpts, pipelineOpts, queryOpts := options.Aggregate(), mongo.Pipeline{}, mopt.Query()
 	switch opt := any(opt).(type) {
 	case *mopt.FindOptions:

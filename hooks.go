@@ -110,10 +110,7 @@ type AfterValidateHook[T Schema] interface {
 
 type hook[T Schema, P IDefaultSchema] func(ctx context.Context, d *Document[T, P], arg *HookArg[T]) error
 
-func (model *Model[T, P]) beforeCreateMany(
-	ctx context.Context,
-	docs []T,
-) ([]*Document[T, P], []any, error) {
+func (model *Model[T, P]) beforeCreateMany(ctx context.Context, docs []T) ([]*Document[T, P], []any, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	newDocs := make([]*Document[T, P], len(docs))
@@ -165,11 +162,7 @@ func (model *Model[T, P]) beforeCreateMany(
 	return newDocs, docsToInsert, nil
 }
 
-func runBeforeCreateHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runBeforeCreateHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(BeforeCreateHook[T]); ok {
 		if err := hook.BeforeCreate(ctx, arg); err != nil {
@@ -184,11 +177,7 @@ func runBeforeCreateHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runAfterCreateHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runAfterCreateHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	if err := runAfterSaveHooks(ctx, d, arg); err != nil {
 		return err
 	}
@@ -203,11 +192,7 @@ func runAfterCreateHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runBeforeDeleteHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runBeforeDeleteHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(BeforeDeleteHook[T]); ok {
 		if err := hook.BeforeDelete(ctx, arg); err != nil {
@@ -217,11 +202,7 @@ func runBeforeDeleteHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runAfterDeleteHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runAfterDeleteHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(AfterDeleteHook[T]); ok {
 		if err := hook.AfterDelete(ctx, arg); err != nil {
@@ -231,11 +212,7 @@ func runAfterDeleteHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runBeforeFindHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runBeforeFindHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(BeforeFindHook[T]); ok {
 		return hook.BeforeFind(ctx, arg)
@@ -243,11 +220,7 @@ func runBeforeFindHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runAfterFindHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runAfterFindHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(AfterFindHook[T]); ok {
 		if err := hook.AfterFind(ctx, arg); err != nil {
@@ -257,11 +230,7 @@ func runAfterFindHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runBeforeSaveHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runBeforeSaveHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(BeforeSaveHook[T]); ok {
 		if err := hook.BeforeSave(ctx, arg); err != nil {
@@ -271,11 +240,7 @@ func runBeforeSaveHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runAfterSaveHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runAfterSaveHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(AfterSaveHook[T]); ok {
 		if err := hook.AfterSave(ctx, arg); err != nil {
@@ -285,11 +250,7 @@ func runAfterSaveHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runBeforeUpdateHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runBeforeUpdateHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(BeforeUpdateHook[T]); ok {
 		if err := hook.BeforeUpdate(ctx, arg); err != nil {
@@ -300,11 +261,7 @@ func runBeforeUpdateHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runAfterUpdateHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runAfterUpdateHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if hook, ok := intf.(AfterUpdateHook[T]); ok {
 		if err := hook.AfterUpdate(ctx, arg); err != nil {
@@ -315,11 +272,7 @@ func runAfterUpdateHooks[T Schema, P IDefaultSchema](
 	return nil
 }
 
-func runValidateHooks[T Schema, P IDefaultSchema](
-	ctx context.Context,
-	d *Document[T, P],
-	arg *HookArg[T],
-) error {
+func runValidateHooks[T Schema, P IDefaultSchema](ctx context.Context, d *Document[T, P], arg *HookArg[T]) error {
 	intf := any(d.Doc)
 	if validator, ok := intf.(ValidateHook[T]); ok {
 		if hook, ok := intf.(BeforeValidateHook[T]); ok {
