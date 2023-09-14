@@ -64,10 +64,7 @@ func (model *Model[T, P]) NewDocument(data T) *Document[T, P] {
 // CreateOne creates a single document in the collection.
 // It returns the created document or an error if one occurred.
 // Document is not created if any of the hooks return an error.
-func (model *Model[T, P]) CreateOne(
-	ctx context.Context, doc T,
-	opts ...*mopt.InsertOneOptions,
-) (*Document[T, P], error) {
+func (model *Model[T, P]) CreateOne(ctx context.Context, doc T, opts ...*mopt.InsertOneOptions) (*Document[T, P], error) {
 	newDoc := model.NewDocument(doc)
 
 	callback := func(sCtx mongo.SessionContext) (interface{}, error) {
@@ -105,11 +102,7 @@ func (model *Model[T, P]) CreateOne(
 // CreateMany creates multiple documents in the collection.
 // It returns the created documents or an error if one occurred.
 // Documents are not created if any of the hooks return an error.
-func (model *Model[T, P]) CreateMany(
-	ctx context.Context,
-	docs []T,
-	opts ...*mopt.InsertManyOptions,
-) ([]*Document[T, P], error) {
+func (model *Model[T, P]) CreateMany(ctx context.Context, docs []T, opts ...*mopt.InsertManyOptions) ([]*Document[T, P], error) {
 	callback := func(sCtx mongo.SessionContext) (interface{}, error) {
 		newDocs, docsToInsert, err := model.beforeCreateMany(ctx, docs)
 		if err != nil {
@@ -141,11 +134,7 @@ func (model *Model[T, P]) CreateMany(
 // DeleteOne deletes a single document from the collection.
 // It returns the deleted result or an error if one occurred.
 // Document is not deleted if any of the hooks return an error.
-func (model *Model[T, P]) DeleteOne(
-	ctx context.Context,
-	query bson.M,
-	opts ...*options.DeleteOptions,
-) (*mongo.DeleteResult, error) {
+func (model *Model[T, P]) DeleteOne(ctx context.Context, query bson.M, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		ds := model.docSample()
 
@@ -175,11 +164,7 @@ func (model *Model[T, P]) DeleteOne(
 // DeleteMany deletes multiple documents from the collection.
 // It returns the deleted result or an error if one occurred.
 // Documents are not deleted if any of the hooks return an error.
-func (model *Model[T, P]) DeleteMany(
-	ctx context.Context,
-	query bson.M,
-	opts ...*options.DeleteOptions,
-) (*mongo.DeleteResult, error) {
+func (model *Model[T, P]) DeleteMany(ctx context.Context, query bson.M, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		ds := model.docSample()
 
@@ -209,10 +194,7 @@ func (model *Model[T, P]) DeleteMany(
 // FindById finds a single document by its id.
 // It returns the document or an error if one occurred.
 // If no document is found, it returns [mongo.ErrNoDocuments].
-func (model *Model[T, P]) FindById(
-	ctx context.Context, id any,
-	opts ...*mopt.FindOneOptions,
-) (*Document[T, P], error) {
+func (model *Model[T, P]) FindById(ctx context.Context, id any, opts ...*mopt.FindOneOptions) (*Document[T, P], error) {
 	oid, err := getObjectId(id)
 	if err != nil {
 		return nil, err
@@ -265,11 +247,7 @@ func (model *Model[T, P]) FindById(
 // FindOne finds a single document from the collection.
 // It returns the document or an error if one occurred.
 // If no document is found, it returns [mongo.ErrNoDocuments].
-func (model *Model[T, P]) FindOne(
-	ctx context.Context,
-	query bson.M,
-	opts ...*mopt.FindOneOptions,
-) (*Document[T, P], error) {
+func (model *Model[T, P]) FindOne(ctx context.Context, query bson.M, opts ...*mopt.FindOneOptions) (*Document[T, P], error) {
 	doc := model.docSample()
 
 	qarg := NewQuery[T]().SetFilter(&query).SetOperation(FindOne).SetOptions(opts)
@@ -312,11 +290,7 @@ func (model *Model[T, P]) FindOne(
 
 // Find finds multiple documents from the collection.
 // It returns the documents or an error if one occurred.
-func (model *Model[T, P]) Find(
-	ctx context.Context,
-	query bson.M,
-	opts ...*mopt.FindOptions,
-) ([]*Document[T, P], error) {
+func (model *Model[T, P]) Find(ctx context.Context, query bson.M, opts ...*mopt.FindOptions) ([]*Document[T, P], error) {
 	d := model.docSample()
 
 	qarg := NewQuery[T]().SetFilter(&query).SetOperation(FindMany).SetOptions(opts)
@@ -362,29 +336,21 @@ func (model *Model[T, P]) Find(
 	return docs, nil
 }
 
-// func (model *Model[T, P]) FindOneAndUpdate(
-// 	ctx context.Context,
-// 	query bson.M,
-// 	update bson.M,
-// 	opts ...*options.FindOneAndUpdateOptions,
-// ) (*Document[T, P], error) {
-// doc := &Document[T,P]{}
-// err := model.collection.FindOneAndUpdate(ctx, query, update, opts...).Decode(doc)
-// if err != nil {
-// 	return nil, err
-// }
-// doc.collection = model.collection
-// return doc, nil
+// func (model *Model[T, P]) FindOneAndUpdate(ctx context.Context, query bson.M, update bson.M, opts ...*options.FindOneAndUpdateOptions) (*Document[T, P], error) {
+// 	doc := &Document[T, P]{}
+// 	err := model.collection.FindOneAndUpdate(ctx, query, update, opts...).Decode(doc)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	doc.collection = model.collection
+// 	return doc, nil
 // 	return nil, nil
 // }
 
 // UpdateOne updates a single document in the collection.
 // It returns the update result or an error if one occurred.
 // Document is not updated if any of the hooks return an error.
-func (model *Model[T, P]) UpdateOne(ctx context.Context,
-	query bson.M, update bson.M,
-	opts ...*options.UpdateOptions,
-) (*mongo.UpdateResult, error) {
+func (model *Model[T, P]) UpdateOne(ctx context.Context, query bson.M, update bson.M, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
@@ -424,9 +390,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context,
 // UpdateMany updates multiple documents in the collection.
 // It returns the update result or an error if one occurred.
 // Documents are not updated if any of the hooks return an error.
-func (model *Model[T, P]) UpdateMany(ctx context.Context,
-	query bson.M, update bson.M, opts ...*options.UpdateOptions,
-) (*mongo.UpdateResult, error) {
+func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update bson.M, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
@@ -497,10 +461,7 @@ func (model *Model[T, P]) docSample() *Document[T, P] {
 	return &doc
 }
 
-func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](
-	ctx context.Context, c *mongo.Collection,
-	q bson.M, d T, opt U,
-) ([]*Document[T, P], error) {
+func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](ctx context.Context, c *mongo.Collection, q bson.M, d T, opt U) ([]*Document[T, P], error) {
 	pipeline, aggrOpts, err := int.BuildPopulatePipeline(d, q, opt)
 	if err != nil {
 		return nil, err
@@ -519,12 +480,7 @@ func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](
 	return docs, nil
 }
 
-func withTransaction(
-	ctx context.Context,
-	coll *mongo.Collection,
-	fn sessFn,
-	opts ...*options.TransactionOptions,
-) (interface{}, error) {
+func withTransaction(ctx context.Context, coll *mongo.Collection, fn sessFn, opts ...*options.TransactionOptions) (interface{}, error) {
 	session, err := coll.Database().Client().StartSession()
 	if err != nil {
 		return nil, err

@@ -17,9 +17,7 @@ type UnionFindOpts interface {
 	*mopt.FindOptions | *mopt.FindOneOptions
 }
 
-func BuildPopulatePipeline[P UnionFindOpts](
-	d any, q bson.M, opt P,
-) (mongo.Pipeline, *options.AggregateOptions, error) {
+func BuildPopulatePipeline[P UnionFindOpts](d any, q bson.M, opt P) (mongo.Pipeline, *options.AggregateOptions, error) {
 	pipelineOpts, aggrOpts, queryOpts := mergeFindOptsWithAggregatOpts(opt)
 	pipeline := append(mongo.Pipeline{bson.D{{Key: "$match", Value: q}}}, pipelineOpts...)
 	var wg sync.WaitGroup
@@ -60,15 +58,16 @@ func BuildPopulatePipeline[P UnionFindOpts](
 // TODO: custom populate errors
 
 func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, error) {
+	// set initial match stage
 	lookupPipeline := mongo.Pipeline{
 		bson.D{
-			{
-				Key: "$match",
-				Value: bson.M{
-					"$expr": bson.M{"$eq": bson.A{"$$localField", "$" + *opt.ForeignField}},
-				},
-			},
+			{Key: "$match", Value: bson.M{"$expr": bson.M{"$eq": bson.A{"$$localField", "$" + *opt.ForeignField}}}},
 		},
+	}
+
+	// set custom match stage
+	if opt.Match != nil {
+		lookupPipeline = append(lookupPipeline, bson.D{{Key: "$match", Value: *opt.Match}})
 	}
 
 	// populated nested populations
@@ -142,6 +141,7 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 		"as":       *opt.Path,
 	}
 	populatePipeline := mongo.Pipeline{}
+	// declare value and type of document to populate
 	v, t := reflect.ValueOf(doc), reflect.TypeOf(doc)
 
 	// document must be a struct
@@ -171,36 +171,37 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 
 		switch {
 		case ft.Kind() == reflect.Slice:
+			// check if it's a pointer
 			elemType := ft.Elem()
 			if elemType.Kind() == reflect.Pointer {
 				elemType = elemType.Elem()
 			}
-			// check if it's slice of struct
+
+			// if path has more fields, type must be a struct
 			if len(paths) > 1 && elemType.Kind() != reflect.Struct {
 				return nil, fmt.Errorf("field %s must be a slice of struct", currPath)
 			}
 			// if the field is a slice, we need to unwind it
-			populatePipeline = append(
-				populatePipeline,
-				bson.D{{Key: "$unwind", Value: "$" + currPath}},
-			)
-			group := bson.E{
-				Key:   "$group",
-				Value: bson.M{"_id": "$_id"},
-			}
+			populatePipeline = append(populatePipeline, bson.D{{Key: "$unwind", Value: "$" + currPath}})
 
+			// declare the slice regroup by _id
+			group := bson.E{Key: "$group", Value: bson.M{"_id": "$_id"}}
+
+			// only group by _id if there are more paths to wind & current path is initial path.
 			if len(paths) < len(strings.Split(*opt.Path, ".")) {
 				group.Value.(bson.M)["_id"] = nil
 			}
 
-			// wind paths in descending order
 			for k := range fields {
+				// key is equal to current path, push the value
 				if k == currPath {
 					group.Value.(bson.M)[k] = bson.M{"$push": "$" + k}
 				} else {
+					// otherwise, select the first value
 					group.Value.(bson.M)[k] = bson.M{"$first": "$" + k}
 				}
 			}
+			// wind paths in descending order
 			windPaths = append([]bson.D{{group}}, windPaths...)
 			t = elemType
 		case ft.Kind() == reflect.Struct:
@@ -219,10 +220,7 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 		populatePipeline = append(
 			populatePipeline,
 			bson.D{
-				{
-					Key:   "$unwind",
-					Value: bson.M{"path": "$" + *opt.Path, "preserveNullAndEmptyArrays": true},
-				},
+				{Key: "$unwind", Value: bson.M{"path": "$" + *opt.Path, "preserveNullAndEmptyArrays": true}},
 			},
 		)
 	}
@@ -250,9 +248,7 @@ func getPopulateStages(doc any, opt *mopt.PopulateOptions) (mongo.Pipeline, erro
 // if opt.Snapshot != nil {
 // }
 
-func mergeFindOptsWithAggregatOpts[T UnionFindOpts](
-	opt T,
-) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
+func mergeFindOptsWithAggregatOpts[T UnionFindOpts](opt T) (mongo.Pipeline, *options.AggregateOptions, *mopt.QueryOptions) {
 	aggOpts, pipelineOpts, queryOpts := options.Aggregate(), mongo.Pipeline{}, mopt.Query()
 	switch opt := any(opt).(type) {
 	case *mopt.FindOptions:
@@ -330,10 +326,48 @@ func getStructFields(t reflect.Type) map[string]reflect.StructField {
 	fields := make(map[string]reflect.StructField)
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		tag := field.Tag.Get("bson")
-		if tag != "" && tag != "-" {
-			fields[tag] = field
+		tags := strings.Split(field.Tag.Get("bson"), ",")
+		// skip fields with no bson tag
+		if len(tags) == 0 {
+			continue
 		}
+
+		// skip fields with "-" tag
+		if tags[0] == "-" {
+			continue
+		}
+
+		// check if field is inlined
+		isInlined := false
+		for _, tag := range tags {
+			if tag == "inline" {
+				isInlined = true
+				break
+			}
+		}
+
+		// if field is inlined, get fields from embedded struct
+		if isInlined {
+			// check if it's a pointer
+			typ := field.Type
+			if typ.Kind() == reflect.Pointer {
+				typ = typ.Elem()
+			}
+
+			// check that inlined field is a struct
+			if typ.Kind() != reflect.Struct {
+				continue
+			}
+
+			embeddedFields := getStructFields(typ)
+			for key, embeddedField := range embeddedFields {
+				fields[key] = embeddedField
+			}
+		} else if tags[0] != "" {
+			// if field is not inlined, add it to fields
+			fields[tags[0]] = field
+		}
+
 	}
 	return fields
 }
