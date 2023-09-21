@@ -205,12 +205,15 @@ func TestModel_Populate(t *testing.T) {
 
 		assert.NoError(t, err, "Find should not return error")
 		assert.NotNil(t, book, "book should not be nil")
+		assert.NotZero(t, book.GetID(), "book.ID should not be zero")
+		assert.NotEmpty(t, book.Doc.Authors, "book should have authors")
 
 		for _, author := range book.Doc.Authors {
 			assert.NotEmpty(t, author.(bson.M)["name"], "author should not be empty")
 		}
 
 		chapters := book.Doc.Chapters
+		assert.NotEmpty(t, chapters, "book should have chapters")
 		for _, chapter := range chapters {
 			author := chapter.Author.(bson.M)
 			assert.NotEmpty(t, author["name"], "author should not be empty")
@@ -234,12 +237,15 @@ func TestModel_Populate(t *testing.T) {
 
 		assert.NoError(t, err, "Find should not return error")
 		assert.NotNil(t, book, "book should not be nil")
+		assert.NotZero(t, book.GetID(), "book.ID should not be zero")
+		assert.NotEmpty(t, book.Doc.Authors, "book should have authors")
 
 		for _, author := range book.Doc.Authors {
 			assert.NotEmpty(t, author.(bson.M)["name"], "author should not be empty")
 		}
 
 		chapters := book.Doc.Chapters
+		assert.NotEmpty(t, chapters, "book should have chapters")
 		for _, chapter := range chapters {
 			author := chapter.Author.(bson.M)
 			assert.NotEmpty(t, author["name"], "author should not be empty")
