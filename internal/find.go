@@ -318,6 +318,8 @@ func mergeFindOptsWithAggregatOpts[T UnionFindOpts](opt T) (mongo.Pipeline, *opt
 			pipelineOpts = append(pipelineOpts, bson.D{{Key: "$project", Value: opt.Projection}})
 		}
 		queryOpts = opt.QueryOptions
+		pipelineOpts = append(pipelineOpts, bson.D{{Key: "$limit", Value: 1}})
+
 	}
 	return pipelineOpts, aggOpts, queryOpts
 }

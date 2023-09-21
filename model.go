@@ -218,8 +218,7 @@ func (model *Model[T, P]) FindById(ctx context.Context, id any, opts ...*mopt.Fi
 		opt.FindOneOptions = fopt
 		opt.QueryOptions = qopt
 
-		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](
-			ctx, model.collection, query, doc.doc, opt)
+		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](ctx, model.collection, query, doc.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -227,6 +226,7 @@ func (model *Model[T, P]) FindById(ctx context.Context, id any, opts ...*mopt.Fi
 		if len(docs) == 0 {
 			return nil, mongo.ErrNoDocuments
 		}
+		doc = docs[0]
 	} else {
 		err = model.collection.FindOne(ctx, query, fopt).Decode(doc)
 		if err != nil {
@@ -262,8 +262,7 @@ func (model *Model[T, P]) FindOne(ctx context.Context, query bson.M, opts ...*mo
 		opt.FindOneOptions = fopt
 		opt.QueryOptions = qopt
 
-		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](
-			ctx, model.collection, query, doc.doc, opt)
+		docs, err := findWithPopulate[*mopt.FindOneOptions, T, P](ctx, model.collection, query, doc.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +270,7 @@ func (model *Model[T, P]) FindOne(ctx context.Context, query bson.M, opts ...*mo
 		if len(docs) == 0 {
 			return nil, mongo.ErrNoDocuments
 		}
+		doc = docs[0]
 	} else {
 		err = model.collection.FindOne(ctx, query, fopt).Decode(doc)
 		if err != nil {
@@ -306,9 +306,7 @@ func (model *Model[T, P]) Find(ctx context.Context, query bson.M, opts ...*mopt.
 		opt := mopt.Find()
 		opt.FindOptions = fopt
 		opt.QueryOptions = qopt
-		docs, err = findWithPopulate[*mopt.FindOptions, T, P](
-			ctx, model.collection, query,
-			d.doc, opt)
+		docs, err = findWithPopulate[*mopt.FindOptions, T, P](ctx, model.collection, query, d.doc, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -354,10 +352,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context, query bson.M, update bs
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		qa := NewQuery[T]().SetFilter(&query).
-			SetUpdate(&update).
-			SetOperation(UpdateOne).
-			SetOptions(opts)
+		qa := NewQuery[T]().SetFilter(&query).SetUpdate(&update).SetOperation(UpdateOne).SetOptions(opts)
 
 		err := runBeforeUpdateHooks(ctx, ds, newHookArg[T](qa, UpdateOne))
 		if err != nil {
@@ -394,10 +389,7 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 	ds := model.docSample()
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
-		qa := NewQuery[T]().SetFilter(&query).
-			SetUpdate(&update).
-			SetOperation(UpdateMany).
-			SetOptions(opts)
+		qa := NewQuery[T]().SetFilter(&query).SetUpdate(&update).SetOperation(UpdateMany).SetOptions(opts)
 
 		err := runBeforeUpdateHooks(ctx, ds, newHookArg[T](qa, UpdateMany))
 		if err != nil {
