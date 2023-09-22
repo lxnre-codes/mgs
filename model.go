@@ -91,7 +91,7 @@ func (model *Model[T, P]) CreateOne(ctx context.Context, doc T, opts ...*mopt.In
 		return nil, err
 	}
 
-	_, err := withTransaction(ctx, model.collection, callback)
+	_, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (model *Model[T, P]) CreateMany(ctx context.Context, docs []T, opts ...*mop
 		return newDocs, err
 	}
 
-	newDocs, err := withTransaction(ctx, model.collection, callback)
+	newDocs, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (model *Model[T, P]) DeleteOne(ctx context.Context, query bson.M, opts ...*
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (model *Model[T, P]) DeleteMany(ctx context.Context, query bson.M, opts ...
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context, query bson.M, update bs
 		err = runAfterUpdateHooks(sessCtx, ds, newHookArg[T](res, UpdateOne))
 		return res, err
 	}
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -411,11 +411,15 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := int.WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
 	return res.(*mongo.UpdateResult), nil
+}
+
+func WithTransaction(ctx context.Context, coll *mongo.Collection, fn int.SessFn, opts ...*options.TransactionOptions) (interface{}, error) {
+	return int.WithTransaction(ctx, coll, fn, opts...)
 }
 
 // func (model *Model[T, P]) CountDocuments(ctx context.Context,
@@ -470,17 +474,6 @@ func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](ctx conte
 		return nil, err
 	}
 	return docs, nil
-}
-
-func withTransaction(ctx context.Context, coll *mongo.Collection, fn sessFn, opts ...*options.TransactionOptions) (interface{}, error) {
-	session, err := coll.Database().Client().StartSession()
-	if err != nil {
-		return nil, err
-	}
-	defer session.EndSession(ctx)
-
-	res, err := session.WithTransaction(ctx, fn, opts...)
-	return res, err
 }
 
 func getObjectId(id any) (*primitive.ObjectID, error) {

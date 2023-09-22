@@ -145,7 +145,7 @@ func (doc *Document[T, P]) Save(ctx context.Context) error {
 		return nil, err
 	}
 
-	_, err := withTransaction(ctx, doc.Collection(), callback)
+	_, err := internal.WithTransaction(ctx, doc.Collection(), callback)
 	return err
 }
 
@@ -168,7 +168,7 @@ func (doc *Document[T, P]) Delete(ctx context.Context) error {
 		return nil, err
 	}
 
-	_, err = withTransaction(ctx, doc.Collection(), callback)
+	_, err = internal.WithTransaction(ctx, doc.Collection(), callback)
 	if err != nil {
 		return err
 	}
