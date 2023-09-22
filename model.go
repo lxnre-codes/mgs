@@ -93,7 +93,7 @@ func (model *Model[T, P]) CreateOne(ctx context.Context, doc T, opts ...*mopt.In
 		return nil, err
 	}
 
-	_, err := int.WithTransaction(ctx, model.collection, callback)
+	_, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (model *Model[T, P]) CreateMany(ctx context.Context, docs []T, opts ...*mop
 		return newDocs, err
 	}
 
-	newDocs, err := int.WithTransaction(ctx, model.collection, callback)
+	newDocs, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (model *Model[T, P]) DeleteOne(ctx context.Context, query bson.M, opts ...*
 		return res, err
 	}
 
-	res, err := int.WithTransaction(ctx, model.collection, callback)
+	res, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (model *Model[T, P]) DeleteMany(ctx context.Context, query bson.M, opts ...
 		return res, err
 	}
 
-	res, err := int.WithTransaction(ctx, model.collection, callback)
+	res, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +377,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context, query bson.M, update bs
 		err = runAfterUpdateHooks(sessCtx, ds, newHookArg[T](res, UpdateOne))
 		return res, err
 	}
-	res, err := int.WithTransaction(ctx, model.collection, callback)
+	res, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +413,7 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 		return res, err
 	}
 
-	res, err := int.WithTransaction(ctx, model.collection, callback)
+	res, err := WithTransaction(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +421,7 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 }
 
 func WithTransaction[T SessionLike](ctx context.Context, sess T, fn func(ctx mongo.SessionContext) (any, error), opts ...*options.TransactionOptions) (any, error) {
-	return int.WithTransaction(ctx, sess, fn, opts...)
+	return WithTransaction(ctx, sess, fn, opts...)
 }
 
 // func (model *Model[T, P]) CountDocuments(ctx context.Context,
