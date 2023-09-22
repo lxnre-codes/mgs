@@ -2,6 +2,7 @@ package mgs_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -284,6 +285,95 @@ func TestModel_Populate(t *testing.T) {
 		}
 
 		// fmt.Printf("---------- %d paths populated ---------- \n", pathsPopulated)
+	})
+}
+
+func TestWithTransaction(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := getDb(ctx)
+	defer cleanup(ctx)
+
+	bookModel := mgs.NewModel[Book, *mgs.DefaultSchema](db.Collection("books"))
+	genBooks := generateBooks(ctx, db)
+
+	t.Run("Should run transaction with mongo.Client", func(t *testing.T) {
+		callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+			err := genBooks[0].Delete(sessCtx)
+			return nil, err
+		}
+		_, err := mgs.WithTransaction(ctx, db.Client(), callback)
+		assert.NoError(t, err, "WithTransaction should not return error")
+	})
+
+	t.Run("Should run transaction with mongo.Database", func(t *testing.T) {
+		callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+			err := genBooks[1].Delete(sessCtx)
+			return nil, err
+		}
+
+		_, err := mgs.WithTransaction(ctx, db, callback)
+		assert.NoError(t, err, "WithTransaction should not return error")
+	})
+
+	t.Run("Should run transaction with mongo.Collection", func(t *testing.T) {
+		callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+			err := genBooks[2].Delete(sessCtx)
+			return nil, err
+		}
+		_, err := mgs.WithTransaction(ctx, db.Collection("books"), callback)
+		assert.NoError(t, err, "WithTransaction should not return error")
+		book, err := bookModel.FindById(ctx, genBooks[2].GetID())
+		assert.Error(t, err, "FindById return error")
+		assert.Nil(t, book, "book should be nil")
+	})
+
+	t.Run("Should run transaction with mongo.Session", func(t *testing.T) {
+		callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+			err := genBooks[3].Delete(sessCtx)
+			return nil, err
+		}
+
+		sess, err := db.Client().StartSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer sess.EndSession(ctx)
+		_, err = mgs.WithTransaction(ctx, &sess, callback)
+		assert.NoError(t, err, "WithTransaction should not return error")
+		book, err := bookModel.FindById(ctx, genBooks[3].GetID())
+		assert.Error(t, err, "FindById return error")
+		assert.Nil(t, book, "book should be nil")
+	})
+
+	t.Run("Should run transaction with mongo.SessionContext", func(t *testing.T) {
+		callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+			callback2 := func(sCtx mongo.SessionContext) (interface{}, error) {
+				err := genBooks[4].Delete(sCtx)
+				return nil, err
+			}
+
+			if _, err := mgs.WithTransaction(context.TODO(), &sessCtx, callback2); err != nil {
+				return nil, err
+			}
+
+			genBooks[5].Doc.Title = "This is a test title"
+			if err = genBooks[5].Save(sessCtx); err != nil {
+				return nil, err
+			}
+
+			return nil, errors.New("this is a test error")
+		}
+		_, err := mgs.WithTransaction(ctx, db, callback)
+		assert.Error(t, err, "WithTransaction should return error")
+
+		book, err := bookModel.FindById(ctx, genBooks[5].GetID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.True(t, book.Doc.Title != "This is a test title", "WithTransaction should rollback changes")
+
+		_, err = bookModel.FindById(ctx, genBooks[4].GetID())
+		assert.NoError(t, err, "WithTransaction should rollback changes")
 	})
 }
 
