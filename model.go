@@ -13,7 +13,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type sessFn func(sessCtx mongo.SessionContext) (interface{}, error)
+type SessionFunc func(sessCtx mongo.SessionContext) (interface{}, error)
+
+type SessionLike interface {
+	*mongo.Database | *mongo.Collection | *mongo.SessionContext | *mongo.Client | *mongo.Session
+}
 
 type Model[T Schema, P IDefaultSchema] struct {
 	collection *mongo.Collection
@@ -91,7 +95,7 @@ func (model *Model[T, P]) CreateOne(ctx context.Context, doc T, opts ...*mopt.In
 		return nil, err
 	}
 
-	_, err := withTransaction(ctx, model.collection, callback)
+	_, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +127,7 @@ func (model *Model[T, P]) CreateMany(ctx context.Context, docs []T, opts ...*mop
 		return newDocs, err
 	}
 
-	newDocs, err := withTransaction(ctx, model.collection, callback)
+	newDocs, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +157,7 @@ func (model *Model[T, P]) DeleteOne(ctx context.Context, query bson.M, opts ...*
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +187,7 @@ func (model *Model[T, P]) DeleteMany(ctx context.Context, query bson.M, opts ...
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +379,7 @@ func (model *Model[T, P]) UpdateOne(ctx context.Context, query bson.M, update bs
 		err = runAfterUpdateHooks(sessCtx, ds, newHookArg[T](res, UpdateOne))
 		return res, err
 	}
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -411,11 +415,42 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 		return res, err
 	}
 
-	res, err := withTransaction(ctx, model.collection, callback)
+	res, err := withAtomicity(ctx, model.collection, callback)
 	if err != nil {
 		return nil, err
 	}
 	return res.(*mongo.UpdateResult), nil
+}
+
+// WithTransaction executes the callback function in a transaction.
+// When a transaction is started with [mongo.SessionContext] options are ignored because the session is already created.
+func WithTransaction[T SessionLike](ctx context.Context, sess T, fn SessionFunc, opts ...*options.TransactionOptions) (any, error) {
+	var session mongo.Session
+	var err error
+	switch sess := any(sess).(type) {
+	case *mongo.SessionContext:
+		return fn(*sess)
+	case *mongo.Session:
+		return (*sess).WithTransaction(ctx, fn, opts...)
+	case *mongo.Client:
+		session, err = sess.StartSession()
+	case *mongo.Database:
+		session, err = sess.Client().StartSession()
+	case *mongo.Collection:
+		session, err = sess.Database().Client().StartSession()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	return session.WithTransaction(ctx, fn, opts...)
+}
+
+func withAtomicity(ctx context.Context, coll *mongo.Collection, callback SessionFunc) (interface{}, error) {
+	if ctx, ok := ctx.(mongo.SessionContext); ok {
+		return callback(ctx)
+	}
+	return WithTransaction(ctx, coll, callback)
 }
 
 // func (model *Model[T, P]) CountDocuments(ctx context.Context,
@@ -470,17 +505,6 @@ func findWithPopulate[U int.UnionFindOpts, T Schema, P IDefaultSchema](ctx conte
 		return nil, err
 	}
 	return docs, nil
-}
-
-func withTransaction(ctx context.Context, coll *mongo.Collection, fn sessFn, opts ...*options.TransactionOptions) (interface{}, error) {
-	session, err := coll.Database().Client().StartSession()
-	if err != nil {
-		return nil, err
-	}
-	defer session.EndSession(ctx)
-
-	res, err := session.WithTransaction(ctx, fn, opts...)
-	return res, err
 }
 
 func getObjectId(id any) (*primitive.ObjectID, error) {
