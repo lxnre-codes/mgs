@@ -13,7 +13,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type sessFn func(sessCtx mongo.SessionContext) (interface{}, error)
+type SessionLike interface {
+	*mongo.Database | *mongo.Collection | *mongo.SessionContext | *mongo.Client | *mongo.Session
+}
 
 type Model[T Schema, P IDefaultSchema] struct {
 	collection *mongo.Collection
@@ -418,8 +420,8 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 	return res.(*mongo.UpdateResult), nil
 }
 
-func WithTransaction(ctx context.Context, coll *mongo.Collection, fn int.SessFn, opts ...*options.TransactionOptions) (interface{}, error) {
-	return int.WithTransaction(ctx, coll, fn, opts...)
+func WithTransaction[T SessionLike](ctx context.Context, sess T, fn func(ctx mongo.SessionContext) (any, error), opts ...*options.TransactionOptions) (any, error) {
+	return int.WithTransaction(ctx, sess, fn, opts...)
 }
 
 // func (model *Model[T, P]) CountDocuments(ctx context.Context,
