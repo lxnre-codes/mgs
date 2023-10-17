@@ -49,33 +49,45 @@ type IDefaultSchema interface {
 // DefaultSchema is a struct that implements the IDefaultSchema interface.
 // It contains the default fields (ID,CreatedAt,UpdatedAt) that are added to a document.
 type DefaultSchema struct {
-	ID        primitive.ObjectID `json:"_id,omitempty"       bson:"_id,omitempty"`
-	CreatedAt time.Time          `json:"createdAt,omitempty" bson:"createdAt,omitempty"`
-	UpdatedAt time.Time          `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
+	ID        *primitive.ObjectID `json:"_id,omitempty"       bson:"_id,omitempty"`
+	CreatedAt *time.Time          `json:"createdAt,omitempty" bson:"createdAt,omitempty"`
+	UpdatedAt *time.Time          `json:"updatedAt,omitempty" bson:"updatedAt,omitempty"`
 }
 
 func (s *DefaultSchema) GenerateID() {
-	s.ID = primitive.NewObjectID()
+	id := primitive.NewObjectID()
+	s.ID = &id
 }
 
 func (s *DefaultSchema) GenerateCreatedAt() {
-	s.CreatedAt = time.Now()
+	c := time.Now()
+	s.CreatedAt = &c
 }
 
 func (s *DefaultSchema) GenerateUpdatedAt() {
-	s.UpdatedAt = time.Now()
+	u := time.Now()
+	s.UpdatedAt = &u
 }
 
 func (s DefaultSchema) GetID() primitive.ObjectID {
-	return s.ID
+	if s.ID == nil {
+		return primitive.NilObjectID
+	}
+	return *s.ID
 }
 
 func (s DefaultSchema) GetCreatedAt() time.Time {
-	return s.CreatedAt
+	if s.CreatedAt == nil {
+		return time.Time{}
+	}
+	return *s.CreatedAt
 }
 
 func (s DefaultSchema) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
+	if s.UpdatedAt == nil {
+		return time.Time{}
+	}
+	return *s.UpdatedAt
 }
 
 func (s DefaultSchema) GetUpdatedAtTag(t string) string {
@@ -91,7 +103,7 @@ func (s DefaultSchema) GetUpdatedAtTag(t string) string {
 // }
 
 func (s *DefaultSchema) SetUpdatedAt(t time.Time) {
-	s.UpdatedAt = t
+	s.UpdatedAt = &t
 }
 
 // Document is a struct that represents a document in a MongoDB collection.
