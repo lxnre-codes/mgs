@@ -13,8 +13,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// SessionFunc is a callback function that's executed within a session transaction.
 type SessionFunc func(sessCtx mongo.SessionContext) (interface{}, error)
 
+// SessionLike is a Union type of all mongo types that a seeion can be derived from.
 type SessionLike interface {
 	*mongo.Database | *mongo.Collection | *mongo.SessionContext | *mongo.Client | *mongo.Session
 }
@@ -424,6 +426,7 @@ func (model *Model[T, P]) UpdateMany(ctx context.Context, query bson.M, update b
 
 // WithTransaction executes the callback function in a transaction.
 // When a transaction is started with [mongo.SessionContext] options are ignored because the session is already created.
+// This method only closes the session if it was created by this method.
 func WithTransaction[T SessionLike](ctx context.Context, sess T, fn SessionFunc, opts ...*options.TransactionOptions) (any, error) {
 	var session mongo.Session
 	var err error
